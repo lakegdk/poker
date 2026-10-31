@@ -727,7 +727,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-10-31.1';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.1';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
