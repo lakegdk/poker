@@ -728,6 +728,10 @@ function setConn(txt, state){
 let connRetry = 0;
 let connStop = false;     // 房间已失效，停止重试
 let connTimer = null;     // 待执行的重连定时器
+let lastRecv = 0;         // 最后一次收到服务端消息的时间
+let hbTimer = null;       // 心跳定时器
+let probeTimer = null;    // 回前台探活超时定时器
+let lastFgAt = 0;         // 前台事件节流
 function backoff(){
   // 指数退避：1s → 1.8s → 3.2s → … 封顶 10s
   return Math.min(1000 * Math.pow(1.8, connRetry), 10000);
@@ -757,31 +761,84 @@ function connect(){
   try { sock = new WebSocket(url); }
   catch(e){ setConn('地址无效','err'); showReconn(connRetry+1); scheduleReconnect(); return; }
   ws = sock;
-  ws.onopen = ()=>{
+  sock.onopen = ()=>{
+    if(ws !== sock) return;             // 已被新连接取代，忽略旧回调
     connRetry = 0;
+    lastRecv = Date.now();
     setConn('已连接','ok');
     hideReconn();
+    startHeartbeat();
     sendMsg({t:'hello', clientId, name:nameNow()});
   };
-  ws.onclose = ()=>{
+  sock.onclose = ()=>{
+    if(ws !== sock) return;             // 旧连接的回调，忽略，避免重复重连
+    stopHeartbeat();
     connRetry++;
     setConn('断开，重连中…','err');
     showReconn(connRetry, connRetry >= 4);
     scheduleReconnect();
   };
-  ws.onerror = ()=>{ setConn('连不上 '+url,'err'); };
-  ws.onmessage = (ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } onMsg(m); };
+  sock.onerror = ()=>{ if(ws !== sock) return; setConn('连不上 '+url,'err'); };
+  sock.onmessage = (ev)=>{
+    if(ws !== sock) return;
+    lastRecv = Date.now();
+    let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    onMsg(m);
+  };
 }
-// 切回前台时立即重连（手机后台会冻结/断开连接，回来秒恢复，不用等退避）
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState !== 'visible') return;
+
+// ==================== 心跳 / 假死检测 ====================
+// iOS(和部分安卓)切后台后，WebSocket 会被系统静默掐断，但 readyState 仍显示 OPEN、
+// onclose 也不触发 —— 这就是「切出去再回来，界面还在但完全不动」的原因。
+// 解决：定时 ping 服务端，长时间收不到任何回包就判定假死，强制重连。
+const HB_MS = 8000;       // 每 8 秒发一次 ping
+const DEAD_MS = 18000;    // 超过 18 秒没收到任何消息（含 pong）判定假死
+
+function startHeartbeat(){
+  stopHeartbeat();
+  lastRecv = Date.now();
+  hbTimer = setInterval(()=>{
+    if(!ws || ws.readyState !== WebSocket.OPEN) return;
+    sendMsg({ t:'ping', ts: Date.now() });
+    if(Date.now() - lastRecv > DEAD_MS) forceReconnect('心跳超时');
+  }, HB_MS);
+}
+function stopHeartbeat(){
+  if(hbTimer){ clearInterval(hbTimer); hbTimer=null; }
+  if(probeTimer){ clearTimeout(probeTimer); probeTimer=null; }
+}
+function forceReconnect(reason){
+  console.log('[ws] 强制重连:', reason);
+  stopHeartbeat();
+  const old = ws; ws = null;
+  try { if(old) old.close(); } catch(e){}
+  connRetry = 0;
+  hideReconn();
+  setConn('重连中…','err');
+  connect();
+}
+
+// 回到前台：连接看着还开着也要先探活，2.5 秒收不到 pong 就强制重连
+function onForeground(tag){
+  const now = Date.now();
+  if(now - lastFgAt < 800) return;      // 节流，避免 focus/visibility 连发
+  lastFgAt = now;
   if(connStop) return;
   if(!ws || ws.readyState !== WebSocket.OPEN){
-    connRetry = 0;          // 重置退避，立刻连
-    hideReconn();
-    connect();
+    connRetry = 0; hideReconn(); connect(); return;
   }
-});
+  const t0 = now;
+  sendMsg({ t:'ping', ts: t0 });
+  if(probeTimer) clearTimeout(probeTimer);
+  probeTimer = setTimeout(()=>{
+    probeTimer = null;
+    if(lastRecv < t0) forceReconnect('回前台探活超时(' + tag + ')');
+  }, 2500);
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') onForeground('visibility'); });
+window.addEventListener('pageshow', ()=>onForeground('pageshow'));   // iOS 从后台/缓存恢复（PWA 加主屏后主要靠这个）
+window.addEventListener('focus', ()=>onForeground('focus'));
+window.addEventListener('online', ()=>onForeground('online'));       // 网络恢复
 
 function onMsg(m){
   if(m.t==='welcome'){
