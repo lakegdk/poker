@@ -429,6 +429,36 @@
   .menu button:active{background:rgba(255,255,255,.10)}
   .menu button.danger{color:#ff9c92}
 
+  /* 积分榜 / 历史战绩 */
+  #exportBox .box-hd b{flex:0 0 auto;white-space:nowrap}
+  #exportBox .exp-meta{margin-left:auto;font-size:11.5px;color:#a9d3c0;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;max-width:60%}
+  .exp-rows{margin:2px 0 10px;border:1px solid rgba(255,255,255,.10);border-radius:12px;overflow:hidden}
+  .exp-row{display:flex;align-items:center;gap:8px;padding:9px 11px;background:rgba(255,255,255,.04);
+    border-bottom:1px solid rgba(255,255,255,.07);font-size:14px}
+  .exp-row:last-child{border-bottom:none}
+  .exp-row .rk{width:18px;font-weight:900;color:#e9c46a;font-size:13px}
+  .exp-row .nm{flex:1;color:#eaf3ee;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .exp-row .nm .tag{font-style:normal;font-size:10px;font-weight:600;margin-left:5px;padding:1px 5px;border-radius:6px;
+    background:rgba(255,255,255,.10);color:#a9d3c0}
+  .exp-row .sc{font-weight:900;font-size:15px;color:#a9d3c0}
+  .exp-row.up .sc{color:#ffe9a8}
+  .exp-row.down .sc{color:#ff9c92}
+  .exp-empty{padding:14px;text-align:center;font-size:12.5px;color:#8fb8a6}
+  .exp-detail{border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:8px 11px;max-height:210px;overflow:auto}
+  .exp-dtitle{font-size:11.5px;color:#a9d3c0;margin-bottom:6px;letter-spacing:.05em}
+  .exp-g{padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.09)}
+  .exp-g:last-child{border-bottom:none}
+  .exp-g .gh{font-size:11.5px;color:#e9c46a;font-weight:700}
+  .exp-g .gl{font-size:11.5px;color:#cfe4da;line-height:1.75;padding-left:8px}
+  .hist-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+  .hist-item{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:11px;cursor:pointer;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10)}
+  .hist-item:active{background:rgba(255,255,255,.12)}
+  .hist-item b{font-size:14px;letter-spacing:.08em}
+  .hist-item span{flex:1;font-size:11px;color:#a9d3c0}
+  .hist-item em{font-style:normal;font-size:11.5px;color:#e9c46a}
+
   .toast{position:fixed;left:50%;bottom:14%;transform:translateX(-50%) translateY(10px);
     background:rgba(0,0,0,.82);color:#fff;font-size:13px;padding:9px 16px;border-radius:12px;
     opacity:0;pointer-events:none;transition:.25s;z-index:200;border:1px solid rgba(255,255,255,.15)}
@@ -497,6 +527,10 @@
         <input id="name" class="inp" placeholder="昵称" maxlength="10" style="flex:0 0 34%" />
         <input id="joinRoom" class="inp" placeholder="房间号加入" maxlength="8" />
         <button id="btnJoin" class="btn green">加入</button>
+      </div>
+
+      <div class="btnrow" style="margin-top:10px">
+        <button class="btn ghost sm" id="btnHistory">📋 历史战绩 / 导出积分</button>
       </div>
     </div>
   </section>
@@ -577,6 +611,7 @@
 
     <!-- 菜单 -->
     <div class="menu" id="hostBox">
+      <button id="btnExport">导出积分榜</button>
       <button id="btnReset">重置分数</button>
       <button id="btnDissolve" class="danger">解散房间</button>
       <button id="btnLeave">退出重连</button>
@@ -635,6 +670,38 @@
       <div class="res-title" id="resTitle">本局结算</div>
       <div id="resLines" style="margin-top:10px"></div>
       <div class="modal-acts"><button class="btn green" id="btnResOk">知道了</button></div>
+    </div>
+  </div>
+
+  <!-- ==================== 积分榜 / 导出 ==================== -->
+  <div class="modal" id="exportBox">
+    <div class="box">
+      <div class="box-hd"><b>积分榜</b><span class="exp-meta" id="expMeta"></span></div>
+      <p class="box-sub" id="expSub">从高到低排列；点「复制」可直接粘到微信里。</p>
+      <div class="exp-rows" id="expRows"></div>
+      <div class="exp-detail">
+        <div class="exp-dtitle">每局明细</div>
+        <div id="expLog"></div>
+      </div>
+      <div class="modal-acts">
+        <button class="btn ghost" id="btnExpCopy">复制</button>
+        <button class="btn" id="btnExpSave">保存 txt</button>
+        <button class="btn green" id="btnExpClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 历史战绩（房间没了也能找回） ==================== -->
+  <div class="modal" id="histBox">
+    <div class="box">
+      <div class="box-hd"><b>历史战绩</b></div>
+      <p class="box-sub">退出/解散房间后积分不会立刻消失：选一个房间号就能查看并导出当时的积分榜。</p>
+      <div class="hist-list" id="histList"></div>
+      <div class="joinrow" style="margin-top:10px">
+        <input id="histRoom" class="inp" placeholder="输入房间号" maxlength="8" />
+        <button class="btn sm" id="btnHistGo">查看</button>
+      </div>
+      <div class="modal-acts"><button class="btn ghost" id="btnHistClose">关闭</button></div>
     </div>
   </div>
 
@@ -808,7 +875,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.6';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.7';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -992,6 +1059,8 @@ function onMsg(m){
     }
   } else if(m.t==='dissolved'){
     roomId=null; store.removeItem('pk_room'); toast('房间已解散'); setTimeout(()=>location.reload(), 600);
+  } else if(m.t==='scoresExport'){
+    showExport(m.report);             // 积分榜：房主「导出积分榜」或「历史战绩」都会走到这里
   } else if(m.t==='kicked'){
     roomId=null; store.removeItem('pk_room');
     toast(m.msg || '你已离开房间');
@@ -1017,6 +1086,7 @@ function render(){
 
   const shortMode = s.mode===1 ? '三人·带王' : s.mode===2 ? '三人·无王' : '四人·无王';
   document.getElementById('modeLine').textContent = shortMode;
+  noteMyRoom(s.roomId, shortMode);   // 记到本机「历史战绩」，退出房间后还能回来导出
   document.getElementById('phaseLine').textContent = phaseName(s.phase);
 
   const noticeEl = document.getElementById('notice');
@@ -1550,6 +1620,7 @@ document.getElementById('btnPlay').onclick = ()=>{
 };
 document.getElementById('btnPass').onclick = ()=> sendMsg({t:'pass', clientId});
 document.getElementById('btnReset').onclick = ()=>{ closeMenu(); sendMsg({t:'resetScores', clientId}); };
+document.getElementById('btnExport').onclick = ()=>{ closeMenu(); sendMsg({t:'exportScores', clientId}); };
 document.getElementById('btnDissolve').onclick = ()=>{ if(confirm('确定解散房间？')) sendMsg({t:'dissolve', clientId}); };
 document.getElementById('btnLeave').onclick = ()=> location.reload();
 document.getElementById('btnResOk').onclick = ()=>{
@@ -1568,6 +1639,113 @@ document.getElementById('btnCopy').onclick = ()=>{
   } catch(e){ prompt('复制房间号', code); }
 };
 
+// ===================== 积分榜导出 / 历史战绩 =====================
+// 说明：房间分数本来只在服务端内存里，房间解散就没了。
+// 现在服务端每局结算都落盘一份存档，房主可随时导出；房间没了也能凭房间号找回。
+let lastReport = null;
+
+function showExport(rep){
+  if(!rep) return;
+  lastReport = rep;
+  document.getElementById('expMeta').textContent = [rep.roomId, rep.rounds + '局'].filter(Boolean).join(' · ');
+  document.getElementById('expSub').textContent =
+    [rep.modeName, '从高到低排列 · 可复制或存成 txt'].filter(Boolean).join(' · ');
+  const rows = rep.rows || [];
+  document.getElementById('expRows').innerHTML = rows.length ? rows.map(r=>
+    '<div class="exp-row'+(r.score>0?' up':(r.score<0?' down':''))+'">'+
+      '<span class="rk">'+r.rank+'</span>'+
+      '<span class="nm">'+esc(r.name)+(r.isBot?'<i class="tag">机器人</i>':'')+(r.isHost?'<i class="tag">房主</i>':'')+'</span>'+
+      '<span class="sc">'+(r.score>=0?'+':'')+r.score+'</span>'+
+    '</div>').join('') : '<div class="exp-empty">本房还没有积分记录</div>';
+  const log = (rep.log||[]).slice().reverse();
+  document.getElementById('expLog').innerHTML = log.length ? log.map(g=>
+    '<div class="exp-g"><div class="gh">第'+g.n+'局'+(g.title?(' · '+esc(g.title)):'')+
+      (g.ts?(' · '+hhmm(g.ts)):'')+'</div>'+
+      (g.lines||[]).map(l=>'<div class="gl">'+esc(l)+'</div>').join('')+'</div>').join('')
+    : '<div class="exp-empty">暂无明细</div>';
+  toggle('exportBox', true);
+}
+function hhmm(ts){
+  const d = new Date(ts); const p = n => (n<10?'0':'')+n;
+  return p(d.getHours())+':'+p(d.getMinutes());
+}
+function copyText(text){
+  const done = ()=> toast('已复制，可直接粘贴到微信');
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+      return;
+    }
+  } catch(e){}
+  fallback();
+  function fallback(){
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      ok ? done() : prompt('复制这段积分榜', text);
+    } catch(e){ prompt('复制这段积分榜', text); }
+  }
+}
+function saveText(name, text){
+  try {
+    const blob = new Blob(['\ufeff'+text], { type:'text/plain;charset=utf-8' });  // BOM：Windows 记事本不乱码
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1500);
+    toast('已保存 ' + name);
+  } catch(e){ prompt('复制这段积分榜', text); }
+}
+document.getElementById('btnExpCopy').onclick = ()=>{ if(lastReport) copyText(lastReport.text); };
+document.getElementById('btnExpSave').onclick = ()=>{
+  if(!lastReport) return;
+  const d = new Date(); const p = n => (n<10?'0':'')+n;
+  saveText('积分榜-' + lastReport.roomId + '-' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '.txt', lastReport.text);
+};
+document.getElementById('btnExpClose').onclick = ()=> toggle('exportBox', false);
+
+// ---- 本机去过的房间（退出/解散后还能找回积分）----
+function getMyRooms(){
+  try { return JSON.parse(localStorage.getItem('pk_rooms') || '[]'); } catch(e){ return []; }
+}
+function noteMyRoom(id, modeName){
+  if(!id) return;
+  let list = getMyRooms();
+  const cur = list[0];
+  // 同一个房间短时间内重复渲染就不再写盘，省掉无谓的 localStorage 写入
+  if(cur && cur.id === id && cur.mode === (modeName||'') && (Date.now() - (cur.ts||0) < 60000)) return;
+  list = list.filter(r => r.id !== id);
+  list.unshift({ id, ts: Date.now(), mode: modeName || '' });
+  try { localStorage.setItem('pk_rooms', JSON.stringify(list.slice(0, 20))); } catch(e){}
+}
+function renderHist(){
+  const list = getMyRooms();
+  const box = document.getElementById('histList');
+  box.innerHTML = list.length ? list.map(r=>
+    '<div class="hist-item" data-id="'+esc(r.id)+'"><b>'+esc(r.id)+'</b>'+
+    '<span>'+esc(r.mode||'')+' · '+histTime(r.ts)+'</span><em>查看 ›</em></div>').join('')
+    : '<div class="exp-empty">本机还没有战绩记录</div>';
+  box.querySelectorAll('.hist-item').forEach(el=>{
+    el.onclick = ()=>{ toggle('histBox', false); sendMsg({t:'roomHistory', clientId, roomId: el.dataset.id}); };
+  });
+}
+function histTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts); const p = n => (n<10?'0':'')+n;
+  return (d.getMonth()+1)+'月'+d.getDate()+'日 '+p(d.getHours())+':'+p(d.getMinutes());
+}
+document.getElementById('btnHistory').onclick = ()=>{ renderHist(); toggle('histBox', true); };
+document.getElementById('btnHistClose').onclick = ()=> toggle('histBox', false);
+document.getElementById('btnHistGo').onclick = ()=>{
+  const v = document.getElementById('histRoom').value.trim().toUpperCase();
+  if(!v){ toast('请输入房间号'); return; }
+  toggle('histBox', false);
+  sendMsg({t:'roomHistory', clientId, roomId: v});
+};
+
 // 菜单
 const menuEl = document.getElementById('hostBox');
 function closeMenu(){ menuEl.classList.remove('show'); }
@@ -1575,8 +1753,10 @@ document.getElementById('btnMenu').onclick = (e)=>{
   e.stopPropagation();
   const s = lastState;
   const meP = s && s.players.find(p=>p.clientId===s.you);
-  document.getElementById('btnReset').style.display = (meP && meP.isHost) ? 'block' : 'none';
-  document.getElementById('btnDissolve').style.display = (meP && meP.isHost) ? 'block' : 'none';
+  const isHost = !!(meP && meP.isHost);
+  document.getElementById('btnReset').style.display = isHost ? 'block' : 'none';
+  document.getElementById('btnDissolve').style.display = isHost ? 'block' : 'none';
+  document.getElementById('btnExport').style.display = isHost ? 'block' : 'none';
   menuEl.classList.toggle('show');
 };
 document.addEventListener('click', (e)=>{
