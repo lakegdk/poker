@@ -94,6 +94,14 @@
   .logo p{margin:6px 0 0;font-size:12px;color:#a9d3c0;letter-spacing:.14em}
 
   .sec-title{font-size:12px;color:#9fc7b5;letter-spacing:.12em;margin:12px 0 8px}
+  .sec-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  /* 单人练习开关：放在标题行右侧，不额外占高度 */
+  .botchk{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#ffe9a8;letter-spacing:0;
+    background:rgba(240,200,90,.10);border:1px solid rgba(240,200,90,.32);padding:3px 9px;border-radius:999px;
+    cursor:pointer;white-space:nowrap;user-select:none;-webkit-user-select:none}
+  .botchk input{width:13px;height:13px;accent-color:#e9c46a;margin:0}
+  .botchk.on{background:rgba(240,200,90,.28);border-color:rgba(240,200,90,.6)}
+  .btnrow{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:2px}
   .modes{display:flex;flex-direction:column;gap:7px}
   .mode{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
     padding:10px 14px;border-radius:14px;border:1px solid rgba(240,200,90,.22);
@@ -462,7 +470,10 @@
         <p>同桌 · 叫牌 · 换牌 · 计分</p>
       </div>
 
-      <div class="sec-title">选择模式开房</div>
+      <div class="sec-title sec-row">
+        <span>选择模式开房</span>
+        <label class="botchk" id="botChk"><input type="checkbox" id="chkBot" /><span>🤖 机器人陪打</span></label>
+      </div>
       <div class="modes">
         <button class="mode" data-mode="1">
           <span class="mnum">3</span>
@@ -519,7 +530,11 @@
             <button class="msbtn" data-mode="3">四人·无王</button>
           </div>
         </div>
-        <button class="btn ghost sm" id="btnCopy" style="margin-top:2px">复制房间号</button>
+        <div class="btnrow">
+          <button class="btn ghost sm" id="btnCopy">复制房间号</button>
+          <button class="btn ghost sm" id="btnAddBot" style="display:none">＋ 机器人</button>
+          <button class="btn ghost sm" id="btnDelBot" style="display:none">－ 机器人</button>
+        </div>
         </div>
 
         <div class="playbox hidden" id="playBox2">
@@ -792,7 +807,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.3';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.4';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -956,6 +971,10 @@ function onMsg(m){
     }
   } else if(m.t==='created' || m.t==='joined'){
     roomId=m.roomId; store.setItem('pk_room',roomId);
+    // 单人练习：座位已被机器人补满，替自己自动点一次准备，进房即开局
+    if(m.t==='created' && m.bots && m.bots.length){
+      setTimeout(()=>{ sendMsg({t:'ready', clientId, ready:true}); }, 350);
+    }
   } else if(m.t==='state'){
     lastState=m; render();
   } else if(m.t==='speech'){
@@ -1008,6 +1027,7 @@ function render(){
 
   renderSeats(s, me);
   renderCenter(s, me, meP);
+  renderBotBtns(s, meP);
   renderMe(s, me, meP);
   renderModals(s, me, meP);
   startCountdown(s);
@@ -1154,6 +1174,22 @@ function renderModeSwitch(s, meP){
   });
 }
 
+// ---- 机器人按钮（房主在等待阶段才能增删）----
+function renderBotBtns(s, meP){
+  const add = document.getElementById('btnAddBot');
+  const del = document.getElementById('btnDelBot');
+  if(!add || !del) return;
+  const canEdit = s.phase === 'waiting' && !!(meP && meP.isHost);
+  const botCnt = s.players.filter(p => p.isBot).length;
+  const full = s.players.length >= s.requiredPlayers;
+  add.style.display = canEdit ? 'inline-block' : 'none';
+  del.style.display = canEdit ? 'inline-block' : 'none';
+  add.disabled = full;
+  del.disabled = botCnt === 0;
+  add.textContent = full ? '座位已满' : '＋ 机器人';
+  del.textContent = botCnt ? ('－ 机器人 ' + botCnt) : '－ 机器人';
+}
+
 // ---- 座位 ----
 function renderSeats(s, me){
   const box = document.getElementById('players');
@@ -1167,9 +1203,10 @@ function renderSeats(s, me){
     const isTurn = p.clientId === s.currentTurnClientId;
     const score = (s.scores && s.scores[p.clientId]!==undefined) ? s.scores[p.clientId] : 0;
     const col = AVATAR[hashIdx(p.name||p.clientId)];
-    const initial = (p.name||'').replace(/^玩家/,'').slice(0,2) || '?';
+    const initial = p.isBot ? '机' : ((p.name||'').replace(/^玩家/,'').slice(0,2) || '?');
 
     const tags = [];
+    if(p.isBot) tags.push('<span class="tg">电脑</span>');
     if(p.isHost) tags.push('<span class="tg gold">房主</span>');
     if(!p.connected) tags.push('<span class="tg off">掉线</span>');
     if(p.isRevealed) tags.push('<span class="tg cy">明牌</span>');
@@ -1460,9 +1497,27 @@ function showRoom(show){
 }
 
 // ===================== 交互 =====================
+// 单人练习开关：勾选后开房自动补满机器人
+const chkBot = document.getElementById('chkBot');
+const botChk = document.getElementById('botChk');
+function syncBotChk(){
+  if(botChk) botChk.classList.toggle('on', !!(chkBot && chkBot.checked));
+}
+if(chkBot){
+  try { chkBot.checked = store.getItem('pk_bot') === '1'; } catch(e){}
+  chkBot.onchange = ()=>{
+    try { store.setItem('pk_bot', chkBot.checked ? '1' : '0'); } catch(e){}
+    syncBotChk();
+  };
+  syncBotChk();
+}
+
 document.querySelectorAll('#lobby button[data-mode]').forEach(b=>{
-  b.onclick = ()=>{ sendMsg({t:'createRoom', mode:+b.dataset.mode, name:nameNow(), clientId}); };
+  b.onclick = ()=>{ sendMsg({t:'createRoom', mode:+b.dataset.mode, name:nameNow(), clientId,
+    bots: !!(chkBot && chkBot.checked)}); };
 });
+document.getElementById('btnAddBot').onclick = ()=> sendMsg({t:'addBot', clientId});
+document.getElementById('btnDelBot').onclick = ()=> sendMsg({t:'removeBot', clientId});
 document.getElementById('btnJoin').onclick = ()=>{
   const id = document.getElementById('joinRoom').value.trim().toUpperCase();
   if(id) sendMsg({t:'joinRoom', roomId:id, name:nameNow(), clientId});
