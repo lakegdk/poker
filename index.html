@@ -255,7 +255,8 @@
     font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;
     background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;padding:0}
   .sndbtn.off{opacity:.55}
-  .taunt-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:60;
+  /* 靠下一些：垂直居中会压住右侧座位的「电脑 / 叫过牌 / 本局主」标签 */
+  .taunt-tab{position:fixed;right:0;top:64%;z-index:60;
     writing-mode:vertical-rl;cursor:pointer;user-select:none;-webkit-user-select:none;
     background:linear-gradient(180deg,#e9c46a,#b98a24);color:#3a2a08;
     font-size:12px;font-weight:800;letter-spacing:.16em;padding:14px 6px 12px;border-radius:10px 0 0 10px;
@@ -807,7 +808,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.4';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.5';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
