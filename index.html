@@ -584,7 +584,7 @@
   </section>
 
   <!-- 快捷语音 侧边栏 -->
-  <div class="taunt-tab" id="tauntTab"><span class="tdot"></span>快捷语音</div>
+  <div class="taunt-tab" id="tauntTab" style="display:none"><span class="tdot"></span>快捷语音</div>
   <div class="taunt-panel" id="tauntPanel">
     <div class="tp-head"><span class="tp-title">快捷语音</span><span class="tp-close" id="tauntClose">×</span></div>
     <div class="tp-list" id="tpList"></div>
@@ -808,7 +808,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.5';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.6';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1495,6 +1495,10 @@ function phaseName(p){
 function showRoom(show){
   document.getElementById('lobby').classList.toggle('hidden', show);
   document.getElementById('room').classList.toggle('hidden', !show);
+  // 快捷语音只在房间里才有意义（首页点了也发不出去）
+  const tab = document.getElementById('tauntTab');
+  if(tab) tab.style.display = show ? '' : 'none';
+  if(!show) document.getElementById('tauntPanel').classList.remove('open');
 }
 
 // ===================== 交互 =====================
