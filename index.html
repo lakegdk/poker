@@ -216,6 +216,9 @@
   #reconnBar{background:rgba(185,42,30,.94)}
   .topbar.wxtip{background:rgba(18,28,58,.95);border-bottom:1px solid rgba(255,255,255,.14)}
   .topbar.pwatip{background:rgba(16,52,40,.95)}
+  .topbar.updtip{background:rgba(18,74,52,.96);border-bottom:1px solid rgba(255,255,255,.14)}
+  .updbtn{margin-left:8px;border:none;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;
+    color:#06281a;background:linear-gradient(180deg,#8ef0b6,#33c47c);cursor:pointer;font-family:inherit}
   .topbar .x{position:absolute;right:8px;top:5px;width:22px;height:22px;line-height:20px;
     background:none;border:none;color:#fff;font-size:18px;cursor:pointer}
   .seat.offline .ava{animation:pulseOff 1.1s ease-in-out infinite}
@@ -416,6 +419,7 @@
 
   <!-- 顶部提示条（重连 / 微信内打开 / 加到主屏） -->
   <div id="reconnBar" class="topbar hide">网络断开，正在重连…<span id="reconnTry"></span></div>
+  <div id="updBar" class="topbar updtip hide">页面有新版本 <button id="btnUpd" class="updbtn">立即刷新</button></div>
   <div id="wxTip" class="topbar wxtip hide"><span id="wxTipText"></span><button id="wxTipClose" class="x" aria-label="关闭">×</button></div>
   <div id="pwaTip" class="topbar pwatip hide"><span id="pwaTipText"></span><button id="pwaTipClose" class="x" aria-label="关闭">×</button></div>
 
@@ -719,6 +723,36 @@ async function loadWsConfig(){
 function sendMsg(obj){ if(ws && ws.readyState===1) ws.send(JSON.stringify(obj)); }
 function nameNow(){ const v=document.getElementById('name').value.trim(); myName=v||myName; store.setItem('pk_name',myName); return myName; }
 
+// ==================== 版本自检 ====================
+// 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
+// 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
+// iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
+const BUILD = '2026-10-31.1';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+let updChecked = 0;
+async function checkUpdate(force){
+  const now = Date.now();
+  if(!force && now - updChecked < 60000) return;   // 一分钟内不重复查
+  updChecked = now;
+  try{
+    const r = await fetch('version.json?t=' + now, { cache:'no-store' });
+    if(!r.ok) return;
+    const j = await r.json();
+    if(j && j.build && j.build !== BUILD) showUpdateBar(j.build);
+  }catch(e){}
+}
+function showUpdateBar(build){
+  const bar = document.getElementById('updBar');
+  if(!bar) return;
+  if(!document.getElementById('reconnBar').classList.contains('hide')) return;  // 断线提示优先
+  bar.innerHTML = '页面有新版本 <button id="btnUpd" class="updbtn">立即刷新</button>';
+  bar.classList.remove('hide');
+  const btn = document.getElementById('btnUpd');
+  if(btn) btn.onclick = ()=>{
+    // 带 ?v= 参数强制绕过 CDN / WebView 缓存
+    location.replace(location.pathname + '?v=' + encodeURIComponent(build));
+  };
+}
+
 function setConn(txt, state){
   const el=document.getElementById('conn');
   if(el) el.textContent = txt;
@@ -824,6 +858,7 @@ function onForeground(tag){
   if(now - lastFgAt < 800) return;      // 节流，避免 focus/visibility 连发
   lastFgAt = now;
   if(connStop) return;
+  checkUpdate();                          // 回前台顺便看看有没有新版本
   if(!ws || ws.readyState !== WebSocket.OPEN){
     connRetry = 0; hideReconn(); connect(); return;
   }
@@ -1444,6 +1479,7 @@ document.getElementById('btnSound').onclick = ()=>{
 loadWsConfig().finally(()=>{
   connect();
   if(roomId) showRoom(true);
+  checkUpdate(true);
 });
 
 // ===== 微信内打开 / 加到主屏 引导 =====
