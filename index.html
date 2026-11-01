@@ -913,7 +913,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.12';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.13';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1205,10 +1205,20 @@ function pumpDecode(){
 }
 
 // 拿到清单后把全部语音排进解码队列（后台分批解，进房间几秒内就全在内存里了）
+// 顺序有讲究：先解「不要/不叫」和单张牌名——这几条在开局头几秒就会被播到，
+// 排在前面能保证刚坐下就零延迟；组合播报（对子/顺子/炸弹）后面慢慢补。
+function speechPriority(t){
+  if(t === '不要' || t === '不叫' || t === '过') return 0;
+  if(t.length <= 2) return 1;                          // 单张牌：三 五 十 勾 圈 凯 尖 二 王
+  if(t.indexOf('、') < 0 && t.length <= 4) return 2;    // 对五 / 三个七 / 王炸
+  return 3;                                           // 顺子、连对、炸弹
+}
 function ensurePreload(){
   if(!AUDIO_MAP) return;
-  for(const f of Object.values(AUDIO_MAP)){
-    if(AUDIO_BUF[f] || decodeQueue.indexOf(f) >= 0) continue;
+  const keys = Object.keys(AUDIO_MAP).sort((a, b) => speechPriority(a) - speechPriority(b));
+  for(const t of keys){
+    const f = AUDIO_MAP[t];
+    if(!f || AUDIO_BUF[f] || decodeQueue.indexOf(f) >= 0) continue;
     decodeQueue.push(f);
   }
   pumpDecode();
