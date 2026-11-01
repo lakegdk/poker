@@ -266,11 +266,23 @@
     background:rgba(16,22,36,.95);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
     border-left:1px solid rgba(255,255,255,.14);
     transform:translateX(100%);transition:transform .26s ease;
-    display:flex;flex-direction:column;padding:14px 12px;box-sizing:border-box}
+    display:flex;flex-direction:column;
+    padding:calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom));
+    box-sizing:border-box}
   .taunt-panel.open{transform:translateX(0)}
-  .tp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .tp-head{display:flex;align-items:center;margin-bottom:8px}
   .tp-title{font-size:14px;font-weight:800;color:#ffe9a8}
-  .tp-close{cursor:pointer;color:#cdd6e0;font-size:18px;line-height:1;padding:2px 6px;user-select:none}
+  /* 关闭键：贴在面板左缘、垂直居中——避开 iOS 状态栏/刘海，任何屏高都点得到 */
+  .tp-close{position:absolute;left:-34px;top:50%;transform:translateY(-50%);
+    width:34px;height:52px;border-radius:12px 0 0 12px;box-sizing:border-box;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(16,22,36,.95);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.18);border-right:none;
+    color:#ffe9a8;font-size:19px;font-weight:700;line-height:1;cursor:pointer;
+    box-shadow:-4px 0 14px rgba(0,0,0,.42);
+    user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+  .tp-close:active{background:rgba(240,200,90,.3)}
+  .tp-close .txt{writing-mode:vertical-rl;font-size:11px;letter-spacing:.1em;margin-top:3px}
   .tp-list{display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;padding:2px}
   .taunt-item{text-align:left;cursor:pointer;font-size:13px;font-weight:700;color:#f6ecd2;font-family:inherit;
     background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);
@@ -621,12 +633,13 @@
   <!-- 快捷语音 侧边栏 -->
   <div class="taunt-tab" id="tauntTab" style="display:none"><span class="tdot"></span>快捷语音</div>
   <div class="taunt-panel" id="tauntPanel">
-    <div class="tp-head"><span class="tp-title">快捷语音</span><span class="tp-close" id="tauntClose">×</span></div>
+    <div class="tp-head"><span class="tp-title">快捷语音</span></div>
     <div class="tp-list" id="tpList"></div>
     <div class="tp-foot">
       <button class="sndbtn" id="btnSound" title="语音播报开关">🔊</button>
       <span class="lab">语音播报</span>
     </div>
+    <div class="tp-close" id="tauntClose" title="关闭快捷语音">×</div>
   </div>
 
   <!-- ==================== 选择阶段 ==================== -->
@@ -875,7 +888,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.7';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.8';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
