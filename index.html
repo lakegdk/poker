@@ -262,6 +262,8 @@
     font-size:12px;font-weight:800;letter-spacing:.16em;padding:14px 6px 12px;border-radius:10px 0 0 10px;
     box-shadow:0 4px 14px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);border-right:none}
   .taunt-tab .tdot{display:block;width:6px;height:6px;border-radius:50%;background:#3a2a08;margin-bottom:8px}
+  /* 开局选择 / 叫牌时，底部浮条会顶到这个位置，把标签挪到桌面上方的空白区，避免抢按键点击 */
+  #app.optbar-on .taunt-tab{top:30%}
   .taunt-panel{position:fixed;right:0;top:0;height:var(--vh100,100%);width:220px;max-width:74vw;z-index:61;
     background:rgba(16,22,36,.95);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
     border-left:1px solid rgba(255,255,255,.14);
@@ -384,6 +386,38 @@
     padding:2px 8px;border-radius:9px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .callrow{display:flex;gap:8px}
   .callrow .sel{flex:1;min-width:0;padding:9px 10px;font-size:13.5px}
+
+  /* ---------- 手牌上方紧凑浮条（开局选择 / 叫牌）----------
+     小按键直接浮在手牌上方，不再用大弹层遮手牌 */
+  .optbar{display:none;align-items:center;gap:6px;margin:6px 0 0;
+    padding:7px 9px;border-radius:14px;
+    background:linear-gradient(180deg,rgba(10,34,26,.94),rgba(6,22,17,.94));
+    border:1px solid rgba(240,200,90,.30);box-shadow:0 8px 22px rgba(0,0,0,.45)}
+  .optbar.show{display:flex;animation:fadein .16s ease}
+  .optbar .cd{flex:0 0 auto;margin-left:0;font-size:13px;font-weight:900;color:#3a2a06;
+    background:linear-gradient(180deg,#ffe8a3,#e9c46a);padding:2px 9px;border-radius:10px}
+  .optbar .btn{flex:0 0 auto;padding:10px 13px;font-size:13.5px;border-radius:11px;white-space:nowrap}
+  .optbar .btn.ghost{background:rgba(255,255,255,.08);color:#cfe8dc;border:1px solid rgba(255,255,255,.14)}
+  /* 「正常开局 / 叫牌」主按键：更大更醒目，占满剩余宽度 */
+  .optbar .btn.big{flex:1 1 auto;padding:12px 18px;font-size:15.5px;font-weight:900;
+    background:linear-gradient(180deg,#3fe08a,#1fa85f);color:#04140c;
+    box-shadow:0 4px 14px rgba(56,212,127,.35)}
+  .optbar .btn.on{border-color:#f0c85a;background:rgba(240,200,90,.18);box-shadow:0 0 0 1px #f0c85a inset}
+  .optbar .givechip{margin-left:0;max-width:110px;font-size:10px}
+  .optbar .grow{flex:1}
+  .obstat{flex:0 1 auto;min-width:0;font-size:10px;color:#9fc7b5;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  /* 叫牌展开行：点数（手机原生滚轮上下滑动选）+ 花色 + 确认 */
+  .callpanel{display:none;gap:8px;align-items:center;margin:6px 0 0;
+    padding:7px 9px;border-radius:14px;
+    background:linear-gradient(180deg,rgba(10,34,26,.94),rgba(6,22,17,.94));
+    border:1px solid rgba(240,200,90,.30);box-shadow:0 8px 22px rgba(0,0,0,.45)}
+  .callpanel.show{display:flex;animation:fadein .16s ease}
+  .callpanel select.sel{flex:1;min-width:0;width:auto;background:rgba(0,0,0,.32);color:#eaf3ee;
+    border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:10px 10px;font-size:14px;
+    outline:none;-webkit-appearance:none;appearance:none}
+  .callpanel .btn{flex:0 0 auto;padding:11px 16px;font-size:14.5px;
+    background:linear-gradient(180deg,#ffe8a3,#e9c46a);color:#3a2a06}
   @keyframes fadein{from{opacity:0}to{opacity:1}}
   .box{width:100%;max-width:430px;max-height:88vh;overflow:auto;
     background:linear-gradient(180deg,#134436,#0a2a20);
@@ -610,6 +644,33 @@
         </div>
       </div>
 
+      <!-- 开局选择：手牌上方四个小按键（正常开局更大更醒目） -->
+      <div class="optbar" id="selectBox">
+        <span class="cd" id="selCount">30</span>
+        <button class="btn ghost" data-choice="discard">弃牌</button>
+        <button class="btn ghost" data-choice="mingpai">明牌</button>
+        <button class="btn ghost" data-choice="strong">强出</button>
+        <button class="btn big" data-choice="normal">正常开局</button>
+        <span class="obstat" id="choiceList"></span>
+      </div>
+
+      <!-- 叫牌：紧凑浮条，点「叫牌」才展开点数/花色选择 -->
+      <div class="optbar" id="callBox">
+        <span class="cd" id="callCount">30</span>
+        <span class="givechip" id="callGiveLabel">未选给出牌</span>
+        <span class="grow"></span>
+        <button class="btn ghost" id="btnSkipCall">不叫牌</button>
+        <button class="btn big" id="btnCallToggle">叫 牌</button>
+      </div>
+      <div class="callpanel" id="callPanel">
+        <select id="callRank" class="sel"></select>
+        <select id="callSuit" class="sel">
+          <option value="S">黑桃 ♠</option><option value="H">红桃 ♥</option>
+          <option value="C">梅花 ♣</option><option value="D">方块 ♦</option>
+        </select>
+        <button class="btn" id="btnCall">确认叫牌</button>
+      </div>
+
       <div class="handrow">
         <div class="hand" id="myHand"></div>
       </div>
@@ -642,41 +703,6 @@
       <span class="lab">语音播报</span>
     </div>
     <div class="tp-close" id="tauntClose" title="关闭快捷语音">×</div>
-  </div>
-
-  <!-- ==================== 选择阶段 ==================== -->
-  <div class="modal bottom" id="selectBox">
-    <div class="box slim">
-      <div class="box-hd"><b>选择阶段</b><span class="cd" id="selCount">30</span></div>
-      <p class="box-sub">30 秒内选择本局玩法，超时按「正常开局」处理。请先看清手牌再决定。</p>
-      <div class="choices">
-        <button class="choice" data-choice="discard"><b>弃牌</b><em>放弃本局</em></button>
-        <button class="choice" data-choice="mingpai"><b>明牌</b><em>手牌公开 · 基数10</em></button>
-        <button class="choice" data-choice="strong"><b>强出</b><em>指定领出 · 基数5</em></button>
-        <button class="choice" data-choice="normal"><b>正常开局</b><em>进入叫牌阶段</em></button>
-      </div>
-      <div class="waitlist" id="choiceList"></div>
-    </div>
-  </div>
-
-  <!-- ==================== 叫牌阶段 ==================== -->
-  <div class="modal bottom" id="callBox">
-    <div class="box slim callslim">
-      <div class="box-hd"><b>叫牌</b><span class="givechip" id="callGiveLabel">未选给出牌</span><span class="cd" id="callCount">30</span></div>
-      <p class="box-sub" id="callSub">单击下方手牌选给出的牌，再选想要的牌（王/3/8/2/A 不可交换）。</p>
-      <div class="callrow">
-        <select id="callRank" class="sel"></select>
-        <select id="callSuit" class="sel">
-          <option value="S">黑桃 ♠</option><option value="H">红桃 ♥</option>
-          <option value="C">梅花 ♣</option><option value="D">方块 ♦</option>
-        </select>
-      </div>
-      <div class="modal-acts">
-        <button class="btn ghost" id="btnSkipCall">不叫牌</button>
-        <button class="btn" id="btnCall">确认叫牌</button>
-      </div>
-      <div class="errline hidden" id="callErr"></div>
-    </div>
   </div>
 
   <!-- ==================== 结算 ==================== -->
@@ -891,7 +917,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.9';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.10';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1064,15 +1090,7 @@ function onMsg(m){
   } else if(m.t==='speech'){
     speak(m.text);                      // 服务端播报：出牌 / 不要 / 不叫 / 叫牌 / 快捷语音
   } else if(m.t==='error'){
-    const ce = document.getElementById('callErr');
-    const box = document.getElementById('callBox');
-    if(ce && box && box.classList.contains('show')){
-      ce.textContent = m.msg;
-      ce.classList.remove('hidden');
-      setTimeout(()=>{ ce.classList.add('hidden'); }, 4000);
-    } else {
-      toast('错误：'+m.msg);
-    }
+    toast('错误：'+m.msg);
   } else if(m.t==='dissolved'){
     roomId=null; store.removeItem('pk_room'); toast('房间已解散'); setTimeout(()=>location.reload(), 600);
   } else if(m.t==='scoresExport'){
@@ -1580,31 +1598,39 @@ function syncCallGive(id){
   }
 }
 
-// ---- 弹层 ----
+// ---- 手牌上方浮条（开局选择 / 叫牌）----
 function renderModals(s, me, meP){
-  // 选择阶段
+  // 开局选择：四个小按键，超时默认正常开局
   const selecting = s.phase === 'selecting';
   toggle('selectBox', selecting);
   if(selecting){
     const chosen = meP && meP.choice;
-    document.querySelectorAll('#selectBox .choice').forEach(b=>{
+    document.querySelectorAll('#selectBox .btn[data-choice]').forEach(b=>{
       b.disabled = !!chosen;
       b.classList.toggle('on', !!chosen && chosen === b.dataset.choice);
     });
-    document.getElementById('choiceList').innerHTML = s.players.map(p=>{
-      const done = !!p.choice;
-      return '<div class="wl'+(done?' done':'')+'"><i></i><span>'+esc(p.name)+
-        (p.clientId===me?'（我）':'')+'</span><em>'+(done?'已选择':'选择中…')+'</em></div>';
-    }).join('');
+    const st = document.getElementById('choiceList');
+    if(st){
+      const done = s.players.filter(p=>p.choice).length;
+      st.textContent = chosen && done < s.players.length
+        ? (done + '/' + s.players.length + ' 已选') : '';
+    }
   }
 
-  // 叫牌阶段
+  // 叫牌：紧凑浮条；点「叫牌」后展开点数/花色
   const myCall = s.phase === 'calling' && s.currentTurnClientId === me;
   toggle('callBox', myCall);
+  if(!myCall) toggle('callPanel', false);
   if(myCall){
-    document.getElementById('callErr').classList.add('hidden');
     fillCallSelects(s, me, meP);
   }
+
+  // 选择/叫牌期间底栏操作行是空的，收起来给牌桌腾地方
+  const actsRow = document.querySelector('.bottom .acts');
+  if(actsRow) actsRow.classList.toggle('hidden', selecting || myCall);
+  // 浮条出现时把右侧「快捷语音」标签上移，别盖住浮条右端的按键
+  const appEl = document.getElementById('app');
+  if(appEl) appEl.classList.toggle('optbar-on', selecting || myCall);
 
   // 结算（已确认过的 id 不再弹）
   const pending = (s.pendingResult && s.pendingResult.id !== ackResultId) ? s.pendingResult : null;
@@ -1629,9 +1655,6 @@ function fillCallSelects(s, me, meP){
   const skip = document.getElementById('btnSkipCall');
   skip.style.display = first ? 'none' : 'block';
   skip.textContent = '不叫牌';
-  document.getElementById('callSub').textContent = first
-    ? '本局你先叫（玩家1 必须叫）：单击下方手牌选给出的牌，再选想要的牌，系统找持有者交换并明示。'
-    : '单击下方手牌选给出的牌，再选想要的牌（王/3/8/2/A 不可交换）。';
 }
 
 // ---- 倒计时 ----
@@ -1696,22 +1719,33 @@ document.getElementById('btnJoin').onclick = ()=>{
   const id = document.getElementById('joinRoom').value.trim().toUpperCase();
   if(id) sendMsg({t:'joinRoom', roomId:id, name:nameNow(), clientId});
 };
-document.querySelectorAll('#selectBox .choice').forEach(b=>{
+document.querySelectorAll('#selectBox .btn[data-choice]').forEach(b=>{
   b.onclick = ()=> sendMsg({t:'select', clientId, choice:b.dataset.choice});
 });
 document.getElementById('btnReady').onclick = ()=>{
   const me = lastState && lastState.players.find(p=>p.clientId===clientId);
   sendMsg({t:'ready', clientId, ready: me ? !me.ready : true});
 };
+// 叫牌浮条：点「叫牌」才展开点数/花色选择行（仅轮到自己叫牌时可用）
+document.getElementById('btnCallToggle').onclick = ()=>{
+  const bar = document.getElementById('callBox');
+  if(!bar || !bar.classList.contains('show')) return;   // 不是自己叫牌，忽略
+  const p = document.getElementById('callPanel');
+  p.classList.toggle('show');
+};
 document.getElementById('btnCall').onclick = ()=>{
   if(!callGiveId){ toast('请先单击手牌选一张要给出的牌'); return; }
+  toggle('callPanel', false);   // 发出后收起展开行
   sendMsg({t:'call', clientId,
     giveCardId: callGiveId,
     takeRank: document.getElementById('callRank').value,
     takeSuit: document.getElementById('callSuit').value});
   callGiveId = null;
 };
-document.getElementById('btnSkipCall').onclick = ()=> sendMsg({t:'skipCall', clientId});
+document.getElementById('btnSkipCall').onclick = ()=>{
+  toggle('callPanel', false);
+  sendMsg({t:'skipCall', clientId});
+};
 document.getElementById('btnPlay').onclick = ()=>{
   if(!selected.size){ toast('先选要出的牌'); return; }
   const ids = [...selected];
