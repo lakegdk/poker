@@ -720,10 +720,6 @@
       <div class="box-hd"><b>积分榜</b><span class="exp-meta" id="expMeta"></span></div>
       <p class="box-sub" id="expSub">从高到低排列；点「复制」可直接粘到微信里。</p>
       <div class="exp-rows" id="expRows"></div>
-      <div class="exp-detail">
-        <div class="exp-dtitle">每局明细</div>
-        <div id="expLog"></div>
-      </div>
       <div class="modal-acts">
         <button class="btn ghost" id="btnExpCopy">复制</button>
         <button class="btn" id="btnExpSave">保存 txt</button>
@@ -917,7 +913,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.10';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.11';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1505,8 +1501,9 @@ function renderHand(hand, mode){
         const card = hand.find(c=>c.id===id);
         if(!card) return;
         if(RESTRICTED.has(card.rank)){ toast('王 / 3 / 8 / 2 / A 不可给出'); return; }
-        callGiveId = id;
-        syncCallGive(id);
+        // 再次点击已选中的牌 → 取消选择（不必先点另一张才能取消）
+        if(callGiveId === id){ callGiveId = null; syncCallGive(null); }
+        else { callGiveId = id; syncCallGive(id); }
         return;
       }
       if(mode !== 'play'){ return; }
@@ -1782,7 +1779,7 @@ function showExport(rep){
   lastReport = rep;
   document.getElementById('expMeta').textContent = [rep.roomId, rep.rounds + '局'].filter(Boolean).join(' · ');
   document.getElementById('expSub').textContent =
-    [rep.modeName, '从高到低排列 · 可复制或存成 txt'].filter(Boolean).join(' · ');
+    [rep.modeName, '总分排名 · 可复制或存成 txt'].filter(Boolean).join(' · ');
   const rows = rep.rows || [];
   document.getElementById('expRows').innerHTML = rows.length ? rows.map(r=>
     '<div class="exp-row'+(r.score>0?' up':(r.score<0?' down':''))+'">'+
@@ -1790,12 +1787,6 @@ function showExport(rep){
       '<span class="nm">'+esc(r.name)+(r.isBot?'<i class="tag">机器人</i>':'')+(r.isHost?'<i class="tag">房主</i>':'')+'</span>'+
       '<span class="sc">'+(r.score>=0?'+':'')+r.score+'</span>'+
     '</div>').join('') : '<div class="exp-empty">本房还没有积分记录</div>';
-  const log = (rep.log||[]).slice().reverse();
-  document.getElementById('expLog').innerHTML = log.length ? log.map(g=>
-    '<div class="exp-g"><div class="gh">第'+g.n+'局'+(g.title?(' · '+esc(g.title)):'')+
-      (g.ts?(' · '+hhmm(g.ts)):'')+'</div>'+
-      (g.lines||[]).map(l=>'<div class="gl">'+esc(l)+'</div>').join('')+'</div>').join('')
-    : '<div class="exp-empty">暂无明细</div>';
   toggle('exportBox', true);
 }
 function hhmm(ts){
@@ -1852,7 +1843,7 @@ function noteMyRoom(id, modeName){
   if(cur && cur.id === id && cur.mode === (modeName||'') && (Date.now() - (cur.ts||0) < 60000)) return;
   list = list.filter(r => r.id !== id);
   list.unshift({ id, ts: Date.now(), mode: modeName || '' });
-  try { localStorage.setItem('pk_rooms', JSON.stringify(list.slice(0, 20))); } catch(e){}
+  try { localStorage.setItem('pk_rooms', JSON.stringify(list.slice(0, 10))); } catch(e){}
 }
 function renderHist(){
   const list = getMyRooms();
