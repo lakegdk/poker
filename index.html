@@ -573,7 +573,7 @@
 
       <div class="joinrow">
         <input id="name" class="inp" placeholder="昵称" maxlength="10" style="flex:0 0 34%" />
-        <input id="joinRoom" class="inp" placeholder="房间号加入" maxlength="8" />
+        <input id="joinRoom" class="inp" placeholder="房间号（2 位）" maxlength="2" inputmode="numeric" />
         <button id="btnJoin" class="btn green">加入</button>
       </div>
 
@@ -913,7 +913,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.11';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.12';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1151,16 +1151,69 @@ if('speechSynthesis' in window){
 }
 // 预生成音频映射（服务端把每条语音先转成 mp3，手机/微信也能出声，不依赖浏览器 TTS）
 let AUDIO_MAP = null;
-const AUDIO_POOL = {};   // 文件路径 -> 已预加载的 <audio>（共享缓存的二进制数据，播报零等待）
-// 进房间/拿到清单后把 mp3 预先拉进缓存，之后每次播报直接复用已下载的数据，不再有「牌先出、声后到」的延迟
+
+// ---- 语音播报：Web Audio 预解码，出声零等待 ----
+// 旧做法是「播报时才 new Audio().play()」：媒体元素即使命中缓存也要走媒体加载 + 解码，
+// 手机/微信上常有 0.3~1s 的启动延迟，于是「牌先出、声音后到」。
+// 现在改成一次性 fetch + decodeAudioData 解成 PCM 存内存，播报时直接 start()，
+// 出声延迟≈0，完全不受网络影响（也不会跟人机延时混在一起）。
+let AC = null;                          // AudioContext（iOS 需在用户手势内解锁）
+let curSrc = null;                      // 正在播的那条（新播报来了直接顶掉，绝不排队积压）
+const AUDIO_BUF = {};                   // 文件名 -> AudioBuffer（解码后的 PCM）
+const AUDIO_POOL = {};                  // 文件名 -> <audio>（仅在尚未解码完时兜底）
+const decodeQueue = [];
+let decodeInFlight = 0;
+const DECODE_CONCURRENCY = 3;
+
+function audioCtx(){
+  if(AC) return AC;
+  try {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if(!Ctor) return null;
+    AC = new Ctor();
+  } catch(e){ AC = null; }
+  return AC;
+}
+
+// 首次用户手势解锁：iOS/微信里 AudioContext 默认 suspended，必须手势内 resume 才能出声
+function unlockAudio(){
+  const ac = audioCtx();
+  if(!ac) return;
+  try {
+    if(ac.state === 'suspended') ac.resume().catch(()=>{});
+    const b = ac.createBuffer(1, 1, 22050);    // 1 帧静音，把自动播放锁顶开
+    const s = ac.createBufferSource();
+    s.buffer = b; s.connect(ac.destination); s.start(0);
+  } catch(e){}
+}
+
+function pumpDecode(){
+  if(!AUDIO_MAP) return;
+  while(decodeInFlight < DECODE_CONCURRENCY && decodeQueue.length){
+    const f = decodeQueue.shift();
+    if(!f || AUDIO_BUF[f]) continue;
+    const ac = audioCtx();
+    if(!ac) return;
+    decodeInFlight++;
+    fetch('audio/' + f, { cache: 'force-cache' })
+      .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
+      .then(buf => new Promise((res, rej) => ac.decodeAudioData(buf, res, rej)))
+      .then(ab => { if(ab) AUDIO_BUF[f] = ab; })
+      .catch(()=>{})
+      .then(() => { decodeInFlight--; setTimeout(pumpDecode, 0); });   // 让出主线程，别卡界面
+  }
+}
+
+// 拿到清单后把全部语音排进解码队列（后台分批解，进房间几秒内就全在内存里了）
 function ensurePreload(){
   if(!AUDIO_MAP) return;
   for(const f of Object.values(AUDIO_MAP)){
-    if(!AUDIO_POOL[f]){
-      try { const a = new Audio('audio/' + f); a.preload = 'auto'; AUDIO_POOL[f] = a; } catch(e){}
-    }
+    if(AUDIO_BUF[f] || decodeQueue.indexOf(f) >= 0) continue;
+    decodeQueue.push(f);
   }
+  pumpDecode();
 }
+
 function loadAudioMap(){
   try {
     // 带 BUILD 版本号：Pages CDN 会缓存 manifest.json 约 10 分钟，
@@ -1173,19 +1226,43 @@ function playAudio(text){
   if(!AUDIO_MAP) return false;
   const f = AUDIO_MAP[text];
   if(!f) return false;
+  const ac = audioCtx();
+  const buf = AUDIO_BUF[f];
+  // 只有 AudioContext 真正处于 running 才走它：iOS 切后台会是 interrupted/suspended，
+  // 这时 start() 只会排队不出声，宁可退回媒体元素，保证这条播报一定有声音。
+  if(ac && buf && ac.state === 'running'){
+    try {
+      // 上一条还没念完就直接顶掉：宁可砍掉半句，也不让播报排队越拖越远
+      if(curSrc){ try{ curSrc.stop(0); }catch(e){} curSrc = null; }
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.connect(ac.destination);
+      src.onended = ()=>{ if(curSrc === src) curSrc = null; };
+      curSrc = src;
+      src.start(0);                       // 数据全在内存，立即出声
+      return true;
+    } catch(e){}
+  }
+  if(ac && ac.state !== 'running') ac.resume().catch(()=>{});
+  // 还没解码完（刚进房间那一两秒）：插队解码，同时用媒体元素兜底保证这次有声
+  if(!AUDIO_BUF[f] && decodeQueue.indexOf(f) < 0){ decodeQueue.unshift(f); pumpDecode(); }
+  return playAudioFallback(f);
+}
+function playAudioFallback(f){
   try {
     let src = AUDIO_POOL[f];
     if(!src){ src = new Audio('audio/' + f); src.preload = 'auto'; AUDIO_POOL[f] = src; }
-    // 克隆一个独立实例来播，共享已缓存的音频数据，避免「同一元素重复 play」的兼容坑
     const a = src.cloneNode(true);
-    a.play().catch(()=>{});   // 数据已在缓存中，几乎瞬时出声
+    a.play().catch(()=>{});
     return true;
   } catch(e){ return false; }
 }
+let audioMapTried = 0;
 function speak(text){
   if(!soundOn || !text) return;
-  ensurePreload();                       // 万一清单刚到、还没预拉，先触发一次
-  if(playAudio(text)) return;            // 优先用预生成音频（手机/微信可用）
+  // 清单没拉到（首次网络抖动）就顺手重试一次，否则只能退化到系统 TTS
+  if(!AUDIO_MAP && Date.now() - audioMapTried > 4000){ audioMapTried = Date.now(); loadAudioMap(); }
+  if(playAudio(text)) return;             // 优先用预解码音频（手机/微信可用，出声零等待）
   // 兜底：浏览器自带 TTS（桌面端多半可用）
   if(!('speechSynthesis' in window)) return;
   try {
@@ -1200,8 +1277,9 @@ function speak(text){
     ss.speak(u);
   } catch(e){}
 }
-// 首次用户手势解锁 Web Speech（仅用于桌面兜底路径；手机端走预生成音频无需此步）
+// 首次用户手势解锁：Web Audio（手机主路径）+ Web Speech（桌面兜底）
 function unlockSpeech(){
+  unlockAudio();
   if(!('speechSynthesis' in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(' '); u.volume = 0;
@@ -1210,6 +1288,12 @@ function unlockSpeech(){
   } catch(e){}
 }
 document.addEventListener('pointerdown', unlockSpeech, { once:true });
+document.addEventListener('touchend', unlockSpeech, { once:true });
+// 部分机型首帧 resume 会失败，之后每次点击都顺手恢复一下（无副作用、开销极低）
+document.addEventListener('pointerdown', ()=>{
+  const ac = audioCtx();
+  if(ac && ac.state === 'suspended') ac.resume().catch(()=>{});
+}, { passive: true });
 function updateSoundBtn(){
   const b = document.getElementById('btnSound');
   if(!b) return;
