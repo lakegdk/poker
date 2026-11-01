@@ -334,11 +334,13 @@
   .handrow{display:flex;justify-content:center;align-items:flex-end;min-height:70px;padding-top:16px}
   /* 手上没牌（等待阶段）时不占位，省下 86px 给牌桌，小屏安卓才不会被底栏挤掉 */
   .handrow.empty{min-height:0;padding-top:0}
-  .hand{display:flex;justify-content:center;align-items:flex-end;max-width:100%}
+  .hand{display:flex;justify-content:center;align-items:flex-end;max-width:100%;touch-action:none}
   .hand .c{cursor:pointer}
   .hand .c.sel{transform:translateY(-6px);box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 2px #f0c85a}
   .hand .c:active{filter:brightness(.96)}
   .hand .c.dim{filter:grayscale(.5) brightness(.72);opacity:.55}
+  /* 滑动选牌进行中：给个轻微的金色描边提示范围 */
+  .hand.dragging .c.range{box-shadow:0 0 0 2px #f0c85a, 0 3px 10px rgba(0,0,0,.4)}
 
   .acts{display:flex;justify-content:center;align-items:center;gap:9px;padding:8px 0 2px;min-height:44px}
   .acts .grow{flex:1}
@@ -839,6 +841,7 @@ let myName = store.getItem('pk_name') || ('玩家'+clientId.slice(3,6));
 document.getElementById('name').value = myName;
 let roomId = store.getItem('pk_room') || null;
 let ws = null, lastState = null, selected = new Set(), callGiveId = null, cdTimer = null;
+let handSelectable = false;   // 当前是否轮到自己出牌（可点选/滑动选）
 let ackResultId = null;   // 已确认过的结算 id（本地兜底，保证一局只弹一次）
 
 // 快捷语音（与服务端白名单一致，服务端会拒绝列表外的文案）
@@ -888,7 +891,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.8';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-01.9';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1134,12 +1137,22 @@ if('speechSynthesis' in window){
 }
 // 预生成音频映射（服务端把每条语音先转成 mp3，手机/微信也能出声，不依赖浏览器 TTS）
 let AUDIO_MAP = null;
+const AUDIO_POOL = {};   // 文件路径 -> 已预加载的 <audio>（共享缓存的二进制数据，播报零等待）
+// 进房间/拿到清单后把 mp3 预先拉进缓存，之后每次播报直接复用已下载的数据，不再有「牌先出、声后到」的延迟
+function ensurePreload(){
+  if(!AUDIO_MAP) return;
+  for(const f of Object.values(AUDIO_MAP)){
+    if(!AUDIO_POOL[f]){
+      try { const a = new Audio('audio/' + f); a.preload = 'auto'; AUDIO_POOL[f] = a; } catch(e){}
+    }
+  }
+}
 function loadAudioMap(){
   try {
     // 带 BUILD 版本号：Pages CDN 会缓存 manifest.json 约 10 分钟，
     // 若拿到旧清单，新播报文案就查不到音轨（会退化到无声/TTS）。版本一变 URL 就变，必定取到新的
     fetch('audio/manifest.json?v=' + encodeURIComponent(BUILD), { cache: 'no-store' })
-      .then(r=>r.json()).then(m=>{ AUDIO_MAP = m; }).catch(()=>{});
+      .then(r=>r.json()).then(m=>{ AUDIO_MAP = m; ensurePreload(); }).catch(()=>{});
   } catch(e){}
 }
 function playAudio(text){
@@ -1147,13 +1160,17 @@ function playAudio(text){
   const f = AUDIO_MAP[text];
   if(!f) return false;
   try {
-    const a = new Audio('audio/' + f);
-    a.play().catch(()=>{});   // 在用户手势内触发，微信/手机浏览器可正常播放
+    let src = AUDIO_POOL[f];
+    if(!src){ src = new Audio('audio/' + f); src.preload = 'auto'; AUDIO_POOL[f] = src; }
+    // 克隆一个独立实例来播，共享已缓存的音频数据，避免「同一元素重复 play」的兼容坑
+    const a = src.cloneNode(true);
+    a.play().catch(()=>{});   // 数据已在缓存中，几乎瞬时出声
     return true;
   } catch(e){ return false; }
 }
 function speak(text){
   if(!soundOn || !text) return;
+  ensurePreload();                       // 万一清单刚到、还没预拉，先触发一次
   if(playAudio(text)) return;            // 优先用预生成音频（手机/微信可用）
   // 兜底：浏览器自带 TTS（桌面端多半可用）
   if(!('speechSynthesis' in window)) return;
@@ -1439,6 +1456,7 @@ function renderMe(s, me, meP){
 // mode: 'play' 出牌可选 | 'call' 叫牌可选(点牌=给出) | 'wait' 只读
 function renderHand(hand, mode){
   const box = document.getElementById('myHand');
+  handSelectable = (mode === 'play');   // 仅轮到自己出牌时可点选/滑动选
   const n = hand.length;
   // 没牌时整行收起来（等待阶段），不白占 86px
   if(box.parentElement) box.parentElement.classList.toggle('empty', !n);
@@ -1454,7 +1472,7 @@ function renderHand(hand, mode){
     const sel = selected.has(c.id) ? ' sel' : '';
     const disabled = (mode==='call') && RESTRICTED.has(c.rank) ? ' dim' : '';
     return '<div class="c'+(isRed(c)?' red':'')+(isJoker(c)?' joker':'')+sel+disabled+
-      '" data-id="'+c.id+'" style="--w:'+cw+'px;margin-left:'+(i===0?0:-over)+'px;z-index:'+(i+1)+'">'+
+      '" data-id="'+c.id+'" data-idx="'+i+'" style="--w:'+cw+'px;margin-left:'+(i===0?0:-over)+'px;z-index:'+(i+1)+'">'+
       (isJoker(c)
         ? '<span class="jk">'+(c.rank==='BJ'?'大王':'小王')+'</span>'
         : '<span class="cc"><b>'+esc(c.rank)+'</b><i>'+(SUIT_SYM[c.suit]||'')+'</i></span>'+
@@ -1480,6 +1498,74 @@ function renderHand(hand, mode){
       if(hint) hint.textContent = selected.size ? ('已选 '+selected.size+' 张') : '点牌选中，再点「出牌」';
     };
   });
+}
+
+// ---- 滑动选牌（出顺子 / 连对 / 炸弹更顺手，不再只能逐张点）----
+// 在牌上按住并横向划过：从起点到当前点（按排序位置）之间的所有牌一次性选中；
+// 轻点单张仍走上面的 onclick 逐张切换。两者不冲突。
+let handDrag = null;       // { startIdx, x, y, moved }
+let swallowClick = false;  // 滑动结束后吃掉随后的 click，避免把选好的牌反选掉
+function initHandDrag(){
+  const box = document.getElementById('myHand');
+  if(!box || box.dataset.dragBound) return;
+  box.dataset.dragBound = '1';
+
+  const idxAt = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    const c = el && el.closest ? el.closest('.c') : null;
+    if(!c || !box.contains(c)) return -1;
+    return +c.dataset.idx;
+  };
+  const applyRange = (lo, hi) => {
+    selected.clear();
+    box.querySelectorAll('.c').forEach(el=>{
+      const i = +el.dataset.idx;
+      const on = i >= lo && i <= hi;
+      if(on) selected.add(el.dataset.id);
+      el.classList.toggle('sel', on);
+      el.classList.toggle('range', on);
+    });
+    const hint = document.getElementById('actHint');
+    if(hint) hint.textContent = '已选 ' + selected.size + ' 张（滑动选）';
+  };
+
+  box.addEventListener('pointerdown', (e)=>{
+    if(!handSelectable) return;                 // 不是自己出牌时，交给原 onclick
+    const card = e.target.closest('.c');
+    if(!card || !box.contains(card)) return;
+    handDrag = { startIdx: +card.dataset.idx, x: e.clientX, y: e.clientY, moved: false };
+  });
+  // 移动 / 抬起挂在 window 上：手指划出牌区也能继续跟踪，且不去抢占指针（避免吞掉随后的 click）
+  const onMove = (e)=>{
+    if(!handDrag) return;
+    const cur = idxAt(e.clientX, e.clientY);
+    if(!handDrag.moved){
+      const dx = Math.abs(e.clientX - handDrag.x), dy = Math.abs(e.clientY - handDrag.y);
+      if(dx > 8 || dy > 8 || cur !== handDrag.startIdx) handDrag.moved = true;
+      else return;
+    }
+    if(cur < 0) return;                         // 拖出牌区：保持上次范围
+    const lo = Math.min(handDrag.startIdx, cur), hi = Math.max(handDrag.startIdx, cur);
+    box.classList.add('dragging');
+    applyRange(lo, hi);
+  };
+  const end = () => {
+    if(!handDrag) return;
+    const wasMoved = handDrag.moved;
+    handDrag = null;
+    box.classList.remove('dragging');
+    if(wasMoved){
+      // 这是一次滑动选牌，拦截随后冒泡上来的 click，别让单张反选把我们选好的牌清空
+      swallowClick = true;
+      setTimeout(()=>{ swallowClick = false; }, 0);
+    }
+  };
+  window.addEventListener('pointermove', onMove, { passive: true });
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+  box.addEventListener('click', (e)=>{
+    if(swallowClick){ e.stopPropagation(); e.preventDefault(); swallowClick = false; }
+  }, true);
 }
 
 function syncCallGive(id){
@@ -1790,6 +1876,7 @@ window.addEventListener('resize', ()=>{
 document.addEventListener('gesturestart', e=>e.preventDefault());
 
 initTauntPanel();
+initHandDrag();
 loadAudioMap();
 updateSoundBtn();
 document.getElementById('btnSound').onclick = ()=>{
