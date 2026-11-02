@@ -922,7 +922,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-02.14';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-02.15';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1170,12 +1170,23 @@ let AUDIO_MAP = null;
 // 现在改成一次性 fetch + decodeAudioData 解成 PCM 存内存，播报时直接 start()，
 // 出声延迟≈0，完全不受网络影响（也不会跟人机延时混在一起）。
 let AC = null;                          // AudioContext（iOS 需在用户手势内解锁）
-let curSrc = null;                      // 正在播的那条（新播报来了直接顶掉，绝不排队积压）
+let curSrc = null;                      // 正在播的那条（播完才轮下一条，不打断）
 const AUDIO_BUF = {};                   // 文件名 -> AudioBuffer（解码后的 PCM）
 const AUDIO_POOL = {};                  // 文件名 -> <audio>（仅在尚未解码完时兜底）
 const decodeQueue = [];
 let decodeInFlight = 0;
 const DECODE_CONCURRENCY = 3;
+
+// ---- 播报队列：一条念完再念下一条，绝不掐断 ----
+// 早期是「新播报来了直接 stop() 上一条」：手速一快或机器人连着出，就只剩半句，
+// 根本判断不出上家到底出了什么牌。现在改成排队 + 音轨本身念得更快：
+// 既不丢信息，也不会越拖越远（正常出牌间隔 900ms，单条语音 0.4~0.7s）。
+const SP_QUEUE = [];
+const SP_MAX_QUEUE = 5;                 // 极端积压上限（连点快捷语音）：超了丢最老的一条
+const SP_BUF_WAIT = 1500;               // 音轨还没解码好时最多等这么久，超时走媒体元素兜底
+let spBusy = false;                     // 当前有一条在播（占着这个位置）
+let spTimer = null;                     // onended 不触发时的保险定时器
+let spStops = 0;                        // 打断次数（测试用，正常应恒为 0）
 
 function audioCtx(){
   if(AC) return AC;
@@ -1210,10 +1221,43 @@ function pumpDecode(){
     fetch('audio/' + f, { cache: 'force-cache' })
       .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
       .then(buf => new Promise((res, rej) => ac.decodeAudioData(buf, res, rej)))
-      .then(ab => { if(ab) AUDIO_BUF[f] = ab; })
+      .then(ab => { if(ab) AUDIO_BUF[f] = trimSilence(ac, ab); })
       .catch(()=>{})
       .then(() => { decodeInFlight--; setTimeout(pumpDecode, 0); });   // 让出主线程，别卡界面
   }
+}
+
+// edge-tts 的每条音轨都是「150ms 头静音 + 语音 + 690ms 尾静音」。
+// 以前不打断、直接顶掉的时候听不出来；改成排队后，这 0.85s 就变成每条之间干等一秒，
+// 越排越慢。所以解码时把头尾静音裁掉（两端各留一点自然收尾，并做 4ms 淡入淡出防爆音）。
+const SP_HEAD_PAD = 0.015, SP_TAIL_PAD = 0.05, SP_SILENCE = 0.008;
+function trimSilence(ac, buf){
+  try {
+    const sr = buf.sampleRate, n = buf.length, ch = buf.numberOfChannels;
+    const data = [];
+    for(let c = 0; c < ch; c++) data.push(buf.getChannelData(c));
+    const loud = (i) => {
+      for(let c = 0; c < ch; c++){ if(Math.abs(data[c][i]) > SP_SILENCE) return true; }
+      return false;
+    };
+    let s = 0;
+    while(s < n && !loud(s)) s++;
+    if(s >= n) return buf;                       // 整条静音，原样返回
+    let e = n - 1;
+    while(e > s && !loud(e)) e--;
+    const from = Math.max(0, s - Math.round(SP_HEAD_PAD * sr));
+    const to = Math.min(n, e + Math.round(SP_TAIL_PAD * sr));
+    const len = to - from;
+    if(len <= 0 || len >= n * 0.98) return buf;  // 本来就没多少静音，别折腾
+    const out = ac.createBuffer(ch, len, sr);
+    const fade = Math.min(Math.round(0.004 * sr), Math.floor(len / 4));
+    for(let c = 0; c < ch; c++){
+      const dst = out.getChannelData(c);
+      dst.set(data[c].subarray(from, to));
+      for(let i = 0; i < fade; i++){ const g = i / fade; dst[i] *= g; dst[len - 1 - i] *= g; }
+    }
+    return out;
+  } catch(e){ return buf; }
 }
 
 // 拿到清单后把全部语音排进解码队列（后台分批解，进房间几秒内就全在内存里了）
@@ -1248,36 +1292,84 @@ function playAudio(text){
   if(!AUDIO_MAP) return false;
   const f = AUDIO_MAP[text];
   if(!f) return false;
+  if(SP_QUEUE.length >= SP_MAX_QUEUE) SP_QUEUE.shift();   // 已经落后太多：丢最老的一条，新的牌面更重要
+  SP_QUEUE.push({ f: f, text: text, at: Date.now() });
+  pumpSpeech();
+  return true;
+}
+
+// 队列推进：同一时刻只有一条在播，播完（或出错、或定时器兜底）才轮到下一条
+function pumpSpeech(){
+  if(spBusy) return;
+  const job = SP_QUEUE.shift();
+  if(!job) return;
+  spBusy = true;
+
+  const finish = ()=>{
+    spBusy = false;
+    curSrc = null;
+    if(spTimer){ clearTimeout(spTimer); spTimer = null; }
+    // 两条之间留一口气（60ms）：静音已裁掉，不给点间隙会糊成一片，反而听不清
+    setTimeout(pumpSpeech, 60);
+  };
+
   const ac = audioCtx();
-  const buf = AUDIO_BUF[f];
+  const buf = AUDIO_BUF[job.f];
   // 只有 AudioContext 真正处于 running 才走它：iOS 切后台会是 interrupted/suspended，
   // 这时 start() 只会排队不出声，宁可退回媒体元素，保证这条播报一定有声音。
   if(ac && buf && ac.state === 'running'){
+    let done = false;
+    const once = ()=>{ if(done) return; done = true; finish(); };
     try {
-      // 上一条还没念完就直接顶掉：宁可砍掉半句，也不让播报排队越拖越远
-      if(curSrc){ try{ curSrc.stop(0); }catch(e){} curSrc = null; }
       const src = ac.createBufferSource();
       src.buffer = buf;
       src.connect(ac.destination);
-      src.onended = ()=>{ if(curSrc === src) curSrc = null; };
+      src.onended = once;
       curSrc = src;
-      src.start(0);                       // 数据全在内存，立即出声
-      return true;
-    } catch(e){}
+      src.start(0);                      // 数据全在内存，立即出声
+      // onended 在个别机型上会丢（切后台再回来），加个按音轨长度的保险，别让队列卡死
+      spTimer = setTimeout(once, Math.ceil(buf.duration * 1000) + 200);
+      return;
+    } catch(e){ once(); return; }
   }
-  if(ac && ac.state !== 'running') ac.resume().catch(()=>{});
-  // 还没解码完（刚进房间那一两秒）：插队解码，同时用媒体元素兜底保证这次有声
-  if(!AUDIO_BUF[f] && decodeQueue.indexOf(f) < 0){ decodeQueue.unshift(f); pumpDecode(); }
-  return playAudioFallback(f);
+
+  // 音轨还没解码好（刚进房间那一两秒）：插队解码，原地等它一会儿
+  if(ac && ac.state !== 'running'){ try { ac.resume().catch(()=>{}); } catch(e){} }
+  if(!AUDIO_BUF[job.f] && decodeQueue.indexOf(job.f) < 0){ decodeQueue.unshift(job.f); pumpDecode(); }
+  const deadline = Date.now() + SP_BUF_WAIT;
+  const retry = ()=>{
+    const ac2 = audioCtx();
+    const b2 = AUDIO_BUF[job.f];
+    if(ac2 && b2 && ac2.state === 'running'){
+      spBusy = false;                     // 解好了，按原顺序重新入队
+      SP_QUEUE.unshift(job);
+      pumpSpeech();
+      return;
+    }
+    if(Date.now() > deadline){
+      // 等不到就退货给媒体元素；它自己 onended 之后再把队列交还
+      playAudioFallback(job.f, ()=>{ spBusy = false; setTimeout(pumpSpeech, 0); });
+      return;
+    }
+    spTimer = setTimeout(retry, 60);
+  };
+  spTimer = setTimeout(retry, 60);
 }
-function playAudioFallback(f){
+
+// 媒体元素兜底：慢、但一定能出声。onDone 保证它播完才让队列往下走，避免两条声音叠在一起
+function playAudioFallback(f, onDone){
+  let called = false;
+  const done = ()=>{ if(called) return; called = true; if(onDone) onDone(); };
   try {
     let src = AUDIO_POOL[f];
     if(!src){ src = new Audio('audio/' + f); src.preload = 'auto'; AUDIO_POOL[f] = src; }
     const a = src.cloneNode(true);
-    a.play().catch(()=>{});
+    a.onended = done;
+    a.onerror = done;
+    a.play().catch(done);
+    if(onDone) setTimeout(done, 5000);
     return true;
-  } catch(e){ return false; }
+  } catch(e){ done(); return false; }
 }
 let audioMapTried = 0;
 function speak(text){
@@ -1292,9 +1384,9 @@ function speak(text){
     if(ss.paused) ss.resume();
     const vs = ss.getVoices() || [];
     if(!zhVoice && vs.length) zhVoice = vs.find(v => /zh|cmn|Chinese/i.test((v.lang||'')+' '+(v.name||''))) || null;
-    if(ss.speaking) ss.cancel();          // 仅在确实在播时打断，避免 Chrome「cancel 后 speak 失效」的坑
+    // 这里也不再 cancel：系统 TTS 自己就是队列广播，掐断同样会「只听得到半句」
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'zh-CN'; u.rate = 1.12; u.pitch = 1.05; u.volume = 1;
+    u.lang = 'zh-CN'; u.rate = 1.25; u.pitch = 1.02; u.volume = 1;
     if(zhVoice) u.voice = zhVoice;
     ss.speak(u);
   } catch(e){}
@@ -1321,6 +1413,14 @@ function updateSoundBtn(){
   if(!b) return;
   b.textContent = soundOn ? '\u{1F50A}' : '\u{1F507}';
   b.classList.toggle('off', !soundOn);
+}
+// 关掉语音 / 退出房间：把没念完的清掉，别让关了声还继续播
+function clearSpeechQueue(){
+  SP_QUEUE.length = 0;
+  if(spTimer){ clearTimeout(spTimer); spTimer = null; }
+  if(curSrc){ try{ curSrc.stop(0); spStops++; }catch(e){} curSrc = null; }
+  spBusy = false;
+  try { if('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch(e){}
 }
 
 // ---- 快捷语音 ----
@@ -2117,6 +2217,7 @@ document.getElementById('btnSound').onclick = ()=>{
   soundOn = !soundOn;
   try { localStorage.setItem('pk_sound', soundOn ? '1' : '0'); } catch(e){}
   updateSoundBtn();
+  if(!soundOn){ clearSpeechQueue(); return; }   // 关掉就立刻静音，别把队列念完
   speak('语音已开启');
 };
 // 先取 ws.json（可选），再连接；没有 ws.json 也不影响（走同域名）
