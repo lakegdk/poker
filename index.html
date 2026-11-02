@@ -922,7 +922,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-02.15';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-03.16';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1736,8 +1736,13 @@ function togglePlayCard(id){
 // ---- 滑动选牌（出顺子 / 连对 / 炸弹更顺手，不再只能逐张点）----
 // 在牌上按住并横向划过：从起点到当前点（按排序位置）之间的所有牌一次性选中；
 // 轻点单张仍走上面的 onclick 逐张切换。两者不冲突。
-let handDrag = null;       // { startIdx, x, y, moved }
-let swallowClick = false;  // 滑动结束后吃掉随后的 click，避免把选好的牌反选掉
+let handDrag = null;       // { id, startIdx, x, y, moved }
+// 本次手势的 click 是否已由 pointerup 代为处理。
+// 不能用 setTimeout(0) 复位：真机上 pointerup 与 click 不在同一个任务里，
+// 定时器常常先跑，click 就会再 toggle 一次、把刚选的又取消掉 —— 表现就是「单击没反应、只能滑动」。
+// 改成 pointerdown 复位 / pointerup 置位 / 捕获到 click 时吞一次，完全不依赖时序。
+let tapHandled = false;     // 本次手势的 click 已由 pointerup 处理
+let tapHandledAt = 0;       // 处理时刻（超时兜底，避免标记残留到下一次无关的点击）
 function initHandDrag(){
   const box = document.getElementById('myHand');
   if(!box || box.dataset.dragBound) return;
@@ -1763,9 +1768,13 @@ function initHandDrag(){
   };
 
   box.addEventListener('pointerdown', (e)=>{
+    tapHandled = false;                         // 新手势一律复位（叫牌/等待阶段也复位）
     if(!handSelectable) return;                 // 不是自己出牌时，交给原 onclick
     const card = e.target.closest('.c');
     if(!card || !box.contains(card)) return;
+    // 选中/取消由 pointerup 统一处理，这里从源头抑制浏览器再合成一次 click；
+    // 否则 pointerup + click 各切一次，正好互相抵消。
+    if(e.cancelable) e.preventDefault();
     handDrag = { id: card.dataset.id, startIdx: +card.dataset.idx, x: e.clientX, y: e.clientY, moved: false };
   });
   // 移动 / 抬起挂在 window 上：手指划出牌区也能继续跟踪，且不去抢占指针（避免吞掉随后的 click）
@@ -1790,17 +1799,14 @@ function initHandDrag(){
     const downId = handDrag.id;
     handDrag = null;
     box.classList.remove('dragging');
-    if(wasMoved){
-      // 这是一次滑动选牌，拦截随后冒泡上来的 click，别让单张反选把我们选好的牌清空
-      swallowClick = true;
-      setTimeout(()=>{ swallowClick = false; }, 0);
-      return;
-    }
+    // 不管轻点还是滑动，这次手势的后续 click 一律由我们自己吞掉：
+    // 轻点已在下面 toggle 过；滑动已用 applyRange 选好范围，再来一次单张反选就白选了。
+    tapHandled = true;
+    tapHandledAt = Date.now();
+    if(wasMoved) return;
     // 轻点：这里自己处理，不再等 click。
     // 手指抖动让 release 落到相邻那张牌上时，浏览器不会给任何一张牌发 click
     // （click 只发给按下/抬起的共同祖先），只靠 onclick 就成了「点了没反应、取消不掉」。
-    swallowClick = true;
-    setTimeout(()=>{ swallowClick = false; }, 0);
     togglePlayCard(downId);
   };
   const cancel = () => { if(handDrag){ handDrag = null; box.classList.remove('dragging'); } };
@@ -1808,7 +1814,9 @@ function initHandDrag(){
   window.addEventListener('pointerup', end);
   window.addEventListener('pointercancel', cancel);
   box.addEventListener('click', (e)=>{
-    if(swallowClick){ e.stopPropagation(); e.preventDefault(); swallowClick = false; }
+    const fresh = tapHandled && (Date.now() - tapHandledAt) < 1000;   // 只吞「紧接着这次手势」的 click
+    tapHandled = false;
+    if(fresh){ e.stopPropagation(); e.preventDefault(); }
   }, true);
 }
 
