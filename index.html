@@ -492,6 +492,9 @@
   .exp-row .sc{font-weight:900;font-size:15px;color:#a9d3c0}
   .exp-row.up .sc{color:#ffe9a8}
   .exp-row.down .sc{color:#ff9c92}
+  /* 「我」那一行：整行高亮 + 左侧金条，扫一眼就能找到自己 */
+  .exp-row.me{background:rgba(240,200,90,.13);box-shadow:inset 3px 0 0 #f0c85a}
+  .exp-row .nm .tag.me{background:rgba(240,200,90,.22);color:#ffe9a8;border-color:rgba(240,200,90,.5)}
   .exp-empty{padding:14px;text-align:center;font-size:12.5px;color:#8fb8a6}
   .exp-detail{border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:8px 11px;max-height:210px;overflow:auto}
   .exp-dtitle{font-size:11.5px;color:#a9d3c0;margin-bottom:6px;letter-spacing:.05em}
@@ -504,8 +507,16 @@
     background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10)}
   .hist-item:active{background:rgba(255,255,255,.12)}
   .hist-item b{font-size:14px;letter-spacing:.08em}
-  .hist-item span{flex:1;font-size:11px;color:#a9d3c0}
+  .hist-item span{flex:1;font-size:11px;color:#a9d3c0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hist-item em{font-style:normal;font-size:11.5px;color:#e9c46a}
+  /* 「我」在这次房间的成绩：名次 + 总分 */
+  .hist-item .hr{font-style:normal;font-size:10.5px;color:#a9d3c0;background:rgba(255,255,255,.08);
+    border-radius:7px;padding:1px 5px;flex:0 0 auto}
+  .hist-item .hs{font-style:normal;font-size:13px;font-weight:900;color:#a9d3c0;min-width:34px;text-align:right;flex:0 0 auto}
+  .hist-item .hs.up{color:#ffe9a8}
+  .hist-item .hs.down{color:#ff9c92}
+  .hist-sum{margin-top:-4px}
+  .hist-sum b{color:#ffe9a8}
 
   .toast{position:fixed;left:50%;bottom:14%;transform:translateX(-50%) translateY(10px);
     background:rgba(0,0,0,.82);color:#fff;font-size:13px;padding:9px 16px;border-radius:12px;
@@ -663,11 +674,7 @@
         <button class="btn big" id="btnCallToggle">叫 牌</button>
       </div>
       <div class="callpanel" id="callPanel">
-        <select id="callRank" class="sel"></select>
-        <select id="callSuit" class="sel">
-          <option value="S">黑桃 ♠</option><option value="H">红桃 ♥</option>
-          <option value="C">梅花 ♣</option><option value="D">方块 ♦</option>
-        </select>
+        <select id="callTarget" class="sel"></select>
         <button class="btn" id="btnCall">确认叫牌</button>
       </div>
 
@@ -732,7 +739,8 @@
   <div class="modal" id="histBox">
     <div class="box">
       <div class="box-hd"><b>历史战绩</b></div>
-      <p class="box-sub">退出/解散房间后积分不会立刻消失：选一个房间号就能查看并导出当时的积分榜。</p>
+      <p class="box-sub">退出/解散房间后积分不会立刻消失：每个房间右边就是你自己在那局的总分，点开可看完整积分榜。</p>
+      <p class="box-sub hist-sum" id="histSum"></p>
       <div class="hist-list" id="histList"></div>
       <div class="joinrow" style="margin-top:10px">
         <input id="histRoom" class="inp" placeholder="输入房间号" maxlength="8" />
@@ -755,6 +763,7 @@ const SUIT_NAME = { S:'黑桃', H:'红桃', C:'梅花', D:'方块' };
 const SUIT_SYM  = { S:'♠', H:'♥', C:'♣', D:'♦' };
 const SUIT_BY_NAME = { '黑桃':'S', '红桃':'H', '梅花':'C', '方块':'D' };
 const ALLOWED_RANKS = ['4','5','6','7','9','10','J','Q','K'];
+const SUITS = ['S','H','C','D'];
 const COMBO_CN = { single:'单张', pair:'对子', bomb:'炸弹', straight:'顺子', pairstraight:'连对', wangzha:'王炸' };
 const AVATAR = [
   ['#5b9bf0','#1f4c8f'], ['#f0a93f','#a35f10'], ['#4fd1a0','#0f6b4f'],
@@ -913,7 +922,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-01.13';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-02.14';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1091,6 +1100,9 @@ function onMsg(m){
     roomId=null; store.removeItem('pk_room'); toast('房间已解散'); setTimeout(()=>location.reload(), 600);
   } else if(m.t==='scoresExport'){
     showExport(m.report);             // 积分榜：房主「导出积分榜」或「历史战绩」都会走到这里
+  } else if(m.t==='scoresList'){
+    histRows = m.rooms || [];         // 最近房间 + 「我」在每个房间的总分
+    renderHist(false);
   } else if(m.t==='kicked'){
     roomId=null; store.removeItem('pk_room');
     toast(m.msg || '你已离开房间');
@@ -1531,6 +1543,9 @@ function renderMe(s, me, meP){
   const mode = s.phase === 'playing'
     ? (myTurn ? 'play' : 'wait')
     : (s.phase === 'calling' && myTurn ? 'call' : 'wait');
+  // 不是自己出牌的时候（等待别人 / 叫牌）把残留选中清掉：
+  // 否则牌面上还亮着「已选」的样子，却怎么点都取消不了（只在轮到自己时点击才生效）
+  if(mode !== 'play' && selected.size) selected.clear();
   renderHand(hand, mode);
 
   // 按钮
@@ -1601,12 +1616,21 @@ function renderHand(hand, mode){
         return;
       }
       if(mode !== 'play'){ return; }
-      if(selected.has(id)) selected.delete(id); else selected.add(id);
-      el.classList.toggle('sel');
-      const hint=document.getElementById('actHint');
-      if(hint) hint.textContent = selected.size ? ('已选 '+selected.size+' 张') : '点牌选中，再点「出牌」';
+      togglePlayCard(id);
     };
   });
+}
+
+// 出牌阶段的「选中 / 取消选中」。抽成函数是为了让 pointerup 也能直接调用：
+// 手指轻点时如果抖到相邻的牌上，浏览器根本不会给任何一张牌发 click，
+// 只靠 onclick 就等于「点了没反应、取消不掉」。
+function togglePlayCard(id){
+  if(!id) return;
+  if(selected.has(id)) selected.delete(id); else selected.add(id);
+  const el = document.querySelector('#myHand .c[data-id="'+id+'"]');
+  if(el) el.classList.toggle('sel', selected.has(id));
+  const hint = document.getElementById('actHint');
+  if(hint) hint.textContent = selected.size ? ('已选 '+selected.size+' 张') : '点牌选中，再点「出牌」';
 }
 
 // ---- 滑动选牌（出顺子 / 连对 / 炸弹更顺手，不再只能逐张点）----
@@ -1642,7 +1666,7 @@ function initHandDrag(){
     if(!handSelectable) return;                 // 不是自己出牌时，交给原 onclick
     const card = e.target.closest('.c');
     if(!card || !box.contains(card)) return;
-    handDrag = { startIdx: +card.dataset.idx, x: e.clientX, y: e.clientY, moved: false };
+    handDrag = { id: card.dataset.id, startIdx: +card.dataset.idx, x: e.clientX, y: e.clientY, moved: false };
   });
   // 移动 / 抬起挂在 window 上：手指划出牌区也能继续跟踪，且不去抢占指针（避免吞掉随后的 click）
   const onMove = (e)=>{
@@ -1650,7 +1674,9 @@ function initHandDrag(){
     const cur = idxAt(e.clientX, e.clientY);
     if(!handDrag.moved){
       const dx = Math.abs(e.clientX - handDrag.x), dy = Math.abs(e.clientY - handDrag.y);
-      if(dx > 8 || dy > 8 || cur !== handDrag.startIdx) handDrag.moved = true;
+      // 只按位移判定是否算「滑动」：手指轻点时抖 1~3px、或指尖刚好压到相邻牌的边上，
+      // 以前会被当成滑动而把刚点的那张重新选中，看起来就是「再点一下取消不掉」。
+      if(dx > 12 || dy > 12) handDrag.moved = true;
       else return;
     }
     if(cur < 0) return;                         // 拖出牌区：保持上次范围
@@ -1658,20 +1684,29 @@ function initHandDrag(){
     box.classList.add('dragging');
     applyRange(lo, hi);
   };
-  const end = () => {
+  const end = (e) => {
     if(!handDrag) return;
     const wasMoved = handDrag.moved;
+    const downId = handDrag.id;
     handDrag = null;
     box.classList.remove('dragging');
     if(wasMoved){
       // 这是一次滑动选牌，拦截随后冒泡上来的 click，别让单张反选把我们选好的牌清空
       swallowClick = true;
       setTimeout(()=>{ swallowClick = false; }, 0);
+      return;
     }
+    // 轻点：这里自己处理，不再等 click。
+    // 手指抖动让 release 落到相邻那张牌上时，浏览器不会给任何一张牌发 click
+    // （click 只发给按下/抬起的共同祖先），只靠 onclick 就成了「点了没反应、取消不掉」。
+    swallowClick = true;
+    setTimeout(()=>{ swallowClick = false; }, 0);
+    togglePlayCard(downId);
   };
+  const cancel = () => { if(handDrag){ handDrag = null; box.classList.remove('dragging'); } };
   window.addEventListener('pointermove', onMove, { passive: true });
   window.addEventListener('pointerup', end);
-  window.addEventListener('pointercancel', end);
+  window.addEventListener('pointercancel', cancel);
   box.addEventListener('click', (e)=>{
     if(swallowClick){ e.stopPropagation(); e.preventDefault(); swallowClick = false; }
   }, true);
@@ -1733,18 +1768,46 @@ function renderModals(s, me, meP){
   }
 }
 
+// 叫牌可以「叫」哪些牌：可交换点数的 9 个 × 4 花色，再去掉
+// ① 自己手上已有的（叫自己的牌等于白换，之前要等服务端报错才知道）
+// ② 前面的玩家已经叫过的（服务端 requestedSet，牌面上已换手）
+function callTargets(s, meP){
+  const mine = new Set(((meP && meP.hand) || []).map(c => c.suit + '|' + c.rank));
+  const asked = new Set((s && s.requested) || []);
+  const out = [];
+  ALLOWED_RANKS.forEach(r=>{
+    SUITS.forEach(su=>{
+      const key = su + '|' + r;
+      if(mine.has(key) || asked.has(key)) return;
+      out.push({ key, label: SUIT_SYM[su] + ' ' + r });
+    });
+  });
+  return out;
+}
+
 function fillCallSelects(s, me, meP){
   // 给出的牌：由单击手牌选择，这里只负责在换手后清掉失效的选择
   const mine = meP && meP.hand ? meP.hand : [];
   if(callGiveId && !mine.some(c=>c.id===callGiveId)){ callGiveId = null; }
   syncCallGive(callGiveId);
 
-  const rk = document.getElementById('callRank');
-  if(!rk.options.length) rk.innerHTML = ALLOWED_RANKS.map(r=>'<option value="'+r+'">'+r+'</option>').join('');
+  // 目标牌：单个下拉，只列合法目标（不用再「点数 + 花色」两次选，也就不会选到自己手上的牌）
+  const sel = document.getElementById('callTarget');
+  const list = callTargets(s, meP);
+  const keep = sel.value;
+  sel.innerHTML = list.length
+    ? list.map(t=>'<option value="'+t.key+'">'+t.label+'</option>').join('')
+    : '<option value="">没有可叫的牌</option>';
+  if(keep && list.some(t=>t.key===keep)) sel.value = keep;
+  sel.disabled = !list.length;
+
+  const btn = document.getElementById('btnCall');
+  if(btn) btn.disabled = !list.length;
 
   const first = meP && meP.roundNumber === 1;
   const skip = document.getElementById('btnSkipCall');
-  skip.style.display = first ? 'none' : 'block';
+  // 必须叫牌却又没有合法目标牌（极少数）：兜底露出「不叫牌」，别把人卡死
+  skip.style.display = (first && list.length) ? 'none' : 'block';
   skip.textContent = '不叫牌';
 }
 
@@ -1826,11 +1889,15 @@ document.getElementById('btnCallToggle').onclick = ()=>{
 };
 document.getElementById('btnCall').onclick = ()=>{
   if(!callGiveId){ toast('请先单击手牌选一张要给出的牌'); return; }
+  const sel = document.getElementById('callTarget');
+  const v = sel && sel.value;
+  if(!v){ toast('没有可叫的牌，点「不叫牌」跳过'); return; }
+  const parts = v.split('|');            // "S|9" → 花色|点数
   toggle('callPanel', false);   // 发出后收起展开行
   sendMsg({t:'call', clientId,
     giveCardId: callGiveId,
-    takeRank: document.getElementById('callRank').value,
-    takeSuit: document.getElementById('callSuit').value});
+    takeRank: parts[1],
+    takeSuit: parts[0]});
   callGiveId = null;
 };
 document.getElementById('btnSkipCall').onclick = ()=>{
@@ -1872,13 +1939,17 @@ function showExport(rep){
   if(!rep) return;
   lastReport = rep;
   document.getElementById('expMeta').textContent = [rep.roomId, rep.rounds + '局'].filter(Boolean).join(' · ');
-  document.getElementById('expSub').textContent =
-    [rep.modeName, '总分排名 · 可复制或存成 txt'].filter(Boolean).join(' · ');
+  // 标题区直接给出「我」的成绩：不用在一堆名字里找自己
+  const my = rep.my;
+  const myTxt = my
+    ? ('我的总分 ' + (my.score>=0?'+':'') + my.score + ' · 第 ' + my.rank + '/' + my.players + ' 名')
+    : '本房没有你的积分记录';
+  document.getElementById('expSub').textContent = myTxt + (my ? ' · 可复制或存成 txt' : '');
   const rows = rep.rows || [];
   document.getElementById('expRows').innerHTML = rows.length ? rows.map(r=>
-    '<div class="exp-row'+(r.score>0?' up':(r.score<0?' down':''))+'">'+
+    '<div class="exp-row'+(r.score>0?' up':(r.score<0?' down':''))+(r.isMe?' me':'')+'">'+
       '<span class="rk">'+r.rank+'</span>'+
-      '<span class="nm">'+esc(r.name)+(r.isBot?'<i class="tag">机器人</i>':'')+(r.isHost?'<i class="tag">房主</i>':'')+'</span>'+
+      '<span class="nm">'+esc(r.name)+(r.isBot?'<i class="tag">机器人</i>':'')+(r.isHost?'<i class="tag">房主</i>':'')+(r.isMe?'<i class="tag me">我</i>':'')+'</span>'+
       '<span class="sc">'+(r.score>=0?'+':'')+r.score+'</span>'+
     '</div>').join('') : '<div class="exp-empty">本房还没有积分记录</div>';
   toggle('exportBox', true);
@@ -1939,23 +2010,67 @@ function noteMyRoom(id, modeName){
   list.unshift({ id, ts: Date.now(), mode: modeName || '' });
   try { localStorage.setItem('pk_rooms', JSON.stringify(list.slice(0, 10))); } catch(e){}
 }
-function renderHist(){
-  const list = getMyRooms();
+// 服务端返回的最近房间（带「我」的名次/总分）；本地列表只做兜底和补全
+let histRows = null;
+
+function histListItems(){
+  const local = getMyRooms();
+  const srv = histRows || [];
+  const seen = new Set();
+  const out = [];
+  srv.forEach(r=>{
+    seen.add(r.roomId);
+    out.push({ roomId:r.roomId, modeName:r.modeName||'', ts:r.updatedAt||0,
+      rounds:r.rounds||0, myScore:(r.myScore===null||r.myScore===undefined)?null:r.myScore, myRank:r.myRank||0 });
+  });
+  // 存档已被清理（超过 10 个房间 / 7 天）但本机还去过的房间：仍列出来，只是没有分数
+  local.forEach(r=>{
+    if(seen.has(r.id)) return;
+    out.push({ roomId:r.id, modeName:r.mode||'', ts:r.ts||0, rounds:0, myScore:null, myRank:0 });
+  });
+  return out;
+}
+
+function renderHist(ask){
+  const list = histListItems();
   const box = document.getElementById('histList');
-  box.innerHTML = list.length ? list.map(r=>
-    '<div class="hist-item" data-id="'+esc(r.id)+'"><b>'+esc(r.id)+'</b>'+
-    '<span>'+esc(r.mode||'')+' · '+histTime(r.ts)+'</span><em>查看 ›</em></div>').join('')
-    : '<div class="exp-empty">本机还没有战绩记录</div>';
+  box.innerHTML = list.length ? list.map(r=>{
+    const has = r.myScore !== null;
+    const cls = has ? (r.myScore > 0 ? ' up' : (r.myScore < 0 ? ' down' : '')) : '';
+    const rk = (has && r.myRank) ? '<i class="hr">第'+r.myRank+'</i>' : '';
+    const sc = has ? '<i class="hs'+cls+'">'+(r.myScore>=0?'+':'')+r.myScore+'</i>' : '<i class="hs" style="opacity:.45">—</i>';
+    return '<div class="hist-item" data-id="'+esc(r.roomId)+'"><b>'+esc(r.roomId)+'</b>'+
+      '<span>'+esc(r.modeName||'')+' · '+histTime(r.ts)+(r.rounds?(' · '+r.rounds+'局'):'')+'</span>'+
+      rk + sc + '<em>查看 ›</em></div>';
+  }).join('') : '<div class="exp-empty">本机还没有战绩记录</div>';
+
+  const sum = document.getElementById('histSum');
+  if(sum){
+    const scored = list.filter(r=>r.myScore !== null);
+    if(!scored.length){
+      sum.innerHTML = list.length ? '这里只列房间；该房间的存档已过保留期（最近 10 个房间 / 7 天），分数查不到了' : '';
+    } else {
+      const total = scored.reduce((a,b)=>a+b.myScore, 0);
+      const wins = scored.filter(r=>r.myScore > 0).length;
+      const loses = scored.filter(r=>r.myScore < 0).length;
+      const draws = scored.length - wins - loses;
+      const tally = '赢 ' + wins + ' / 输 ' + loses + (draws ? ' / 平 ' + draws : '');
+      sum.innerHTML = '最近 <b>'+scored.length+'</b> 个房间合计 <b>'+(total>=0?'+':'')+total+'</b> 分' +
+        '（'+tally+'）· 行尾数字是我在该房间的总分';
+    }
+  }
+
   box.querySelectorAll('.hist-item').forEach(el=>{
     el.onclick = ()=>{ toggle('histBox', false); sendMsg({t:'roomHistory', clientId, roomId: el.dataset.id}); };
   });
+  if(ask) sendMsg({t:'roomHistoryList', clientId});   // 向服务端要「我」的分数
 }
 function histTime(ts){
   if(!ts) return '';
   const d = new Date(ts); const p = n => (n<10?'0':'')+n;
   return (d.getMonth()+1)+'月'+d.getDate()+'日 '+p(d.getHours())+':'+p(d.getMinutes());
 }
-document.getElementById('btnHistory').onclick = ()=>{ renderHist(); toggle('histBox', true); };
+document.getElementById('btnHistory').onclick = ()=>{ histRows = null; renderHist(true); toggle('histBox', true); };
 document.getElementById('btnHistClose').onclick = ()=> toggle('histBox', false);
 document.getElementById('btnHistGo').onclick = ()=>{
   const v = document.getElementById('histRoom').value.trim().toUpperCase();
