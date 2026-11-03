@@ -169,10 +169,16 @@
     font-weight:900;font-size:17px;color:#fff;letter-spacing:.02em;
     background:linear-gradient(160deg,#4f8fd8,#20406e);
     box-shadow:inset 0 0 0 2px rgba(255,255,255,.28),0 5px 14px rgba(0,0,0,.45)}
-  .seat.turn .ava{box-shadow:0 0 0 3px #f0c85a,0 0 20px 5px rgba(240,200,90,.55),inset 0 0 0 2px rgba(255,255,255,.3);
+  .seat.turn{background:rgba(240,200,90,.10);border-radius:14px;outline:2px solid rgba(240,200,90,.6);outline-offset:3px}
+  .seat.turn .ava{box-shadow:0 0 0 3px #f0c85a,0 0 22px 6px rgba(240,200,90,.6),inset 0 0 0 2px rgba(255,255,255,.35);
     animation:breath 1.4s ease-in-out infinite}
   @keyframes breath{0%,100%{box-shadow:0 0 0 3px #f0c85a,0 0 14px 2px rgba(240,200,90,.4),inset 0 0 0 2px rgba(255,255,255,.3)}
     50%{box-shadow:0 0 0 3px #ffe9a8,0 0 26px 8px rgba(240,200,90,.7),inset 0 0 0 2px rgba(255,255,255,.35)}}
+  /* 轮到谁出牌，头像上方一个醒目的「▶ 出牌中」徽标（脉冲动画） */
+  .turn-flag{margin-bottom:3px;font-size:11px;font-weight:900;color:#1d1300;
+    background:linear-gradient(180deg,#ffe08a,#f0c85a);padding:2px 9px;border-radius:999px;
+    box-shadow:0 2px 8px rgba(240,200,90,.5);letter-spacing:.5px;animation:tfPulse 1s ease-in-out infinite}
+  @keyframes tfPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
   .seat .off .ava,.seat.offline .ava{filter:grayscale(.85) brightness(.7)}
   .rdy{position:absolute;right:-3px;bottom:-2px;width:17px;height:17px;border-radius:50%;
     background:#38d47f;border:2px solid #0a2b20;display:flex;align-items:center;justify-content:center;
@@ -316,7 +322,10 @@
   .lptitle{font-size:11px;letter-spacing:.2em;color:#a9d3c0}
   .lpcards{display:flex;justify-content:center;align-items:flex-end;flex-wrap:wrap;gap:1px;min-height:54px}
   .lpcards .c{--w:38px}
-  .lpowner{font-size:12px;color:#d6ece2}
+  .lpowner{font-size:13px;color:#eaf3ee;margin-top:2px;display:flex;align-items:center;gap:6px;
+    justify-content:center;flex-wrap:wrap;background:rgba(255,255,255,.07);border-radius:10px;padding:4px 10px;font-weight:700}
+  .lpava{width:18px;height:18px;border-radius:50%;display:inline-block;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.4)}
+  .lpname{color:#ffe9a8;font-weight:900}
   .notice{font-size:11.5px;color:#ffe9a8;background:rgba(0,0,0,.32);
     padding:4px 11px;border-radius:12px;max-width:100%;
     border:1px solid rgba(240,200,90,.18)}
@@ -494,7 +503,10 @@
   .exp-row.down .sc{color:#ff9c92}
   /* 「我」那一行：整行高亮 + 左侧金条，扫一眼就能找到自己 */
   .exp-row.me{background:rgba(240,200,90,.13);box-shadow:inset 3px 0 0 #f0c85a}
+  .exp-row.left{opacity:.66}
+  .exp-row.left .nm{text-decoration:line-through;text-decoration-color:rgba(255,255,255,.3)}
   .exp-row .nm .tag.me{background:rgba(240,200,90,.22);color:#ffe9a8;border-color:rgba(240,200,90,.5)}
+  .exp-row .nm .tag.off{background:rgba(255,255,255,.14);color:#cfd8d4}
   .exp-empty{padding:14px;text-align:center;font-size:12.5px;color:#8fb8a6}
   .exp-detail{border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:8px 11px;max-height:210px;overflow:auto}
   .exp-dtitle{font-size:11.5px;color:#a9d3c0;margin-bottom:6px;letter-spacing:.05em}
@@ -852,7 +864,14 @@ function backHtml(w){
 }
 
 // ===================== 连接 =====================
-function genId(){ return 'h5_'+Math.random().toString(36).slice(2,10); }
+// 给每部手机一个「短身份证」：h5 前缀 + 4 位无歧义字符（去掉易混的 I O 0 1）。
+// 短了才好念、好记、好区分；存进 sessionStorage 后固定不变，同一浏览器多标签各自独立。
+function genId(){
+  const POOL = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 4; i++) s += POOL[Math.floor(Math.random() * POOL.length)];
+  return 'h5' + s;   // 例如 h5K7Q2（共 6 位）
+}
 // 用 sessionStorage：同一浏览器多开标签页时每个标签是独立玩家，才能一台电脑模拟 3~4 人。
 // 支持 ?cid=xxx 固定身份；受限 iframe 里 storage 会抛异常，降级到内存。
 const store = (() => {
@@ -868,7 +887,7 @@ const store = (() => {
 const urlCid = (()=>{ try{ return new URLSearchParams(location.search).get('cid'); }catch(e){ return null; } })();
 let clientId = urlCid || store.getItem('pk_cid') || genId();
 store.setItem('pk_cid', clientId);
-let myName = store.getItem('pk_name') || ('玩家'+clientId.slice(3,6));
+let myName = store.getItem('pk_name') || clientId;   // 默认直接用短编号当昵称，不同手机一眼区分；可在「昵称」框改成真名
 document.getElementById('name').value = myName;
 let roomId = store.getItem('pk_room') || null;
 let ws = null, lastState = null, selected = new Set(), callGiveId = null, cdTimer = null;
@@ -922,7 +941,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-03.16';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-04.17';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1524,7 +1543,7 @@ function renderSeats(s, me){
     const isTurn = p.clientId === s.currentTurnClientId;
     const score = (s.scores && s.scores[p.clientId]!==undefined) ? s.scores[p.clientId] : 0;
     const col = AVATAR[hashIdx(p.name||p.clientId)];
-    const initial = p.isBot ? '机' : ((p.name||'').replace(/^玩家/,'').slice(0,2) || '?');
+    const initial = p.isBot ? '机' : ((p.name||clientId).replace(/^h5/i,'').slice(0,2) || '?');
 
     const tags = [];
     if(p.isBot) tags.push('<span class="tg">电脑</span>');
@@ -1561,6 +1580,7 @@ function renderSeats(s, me){
 
     return '<div class="seat '+pos+(isTurn?' turn':'')+(isOwner?' owner':'')+(p.connected?'':' offline')+'">'+
       bubbleHtml(p.taunt)+
+      (isTurn ? '<div class="turn-flag">▶ 出牌中</div>' : '')+
       '<div class="ava" style="background:linear-gradient(160deg,'+col[0]+','+col[1]+')">'+
         esc(initial)+
         (p.ready ? '<div class="rdy">✓</div>' : '<div class="rdy no">·</div>')+
@@ -1608,8 +1628,14 @@ function renderCenter(s, me, meP){
     cardsEl.innerHTML = lp.cards.map(lbl => faceHtml(parseLabel(lbl), 38)).join('');
     const who = s.players.find(p=>p.clientId===lp.clientId);
     const combo = lp.combo ? (COMBO_CN[lp.combo.type]||'') : '';
-    ownerEl.innerHTML = (who?esc(who.name):'') + (combo?(' · '+combo):'') +
-      (s.base?(' · 基数 '+s.base):'');
+    if (who) {
+      const col = AVATAR[hashIdx(who.name||who.clientId)];
+      ownerEl.innerHTML = '<span class="lpava" style="background:linear-gradient(160deg,'+col[0]+','+col[1]+')"></span>'+
+        '<span class="lpname">'+esc(who.name)+'</span> 出了' +
+        (combo?(' · <b>'+combo+'</b>'):'') + (s.base?(' · 基数 '+s.base):'');
+    } else {
+      ownerEl.textContent = '有人出了' + (combo?(' · '+combo):'') + (s.base?(' · 基数 '+s.base):'');
+    }
   }
 }
 
@@ -1619,7 +1645,7 @@ function renderMe(s, me, meP){
   const col = AVATAR[hashIdx((meP&&meP.name)||myName)];
   const ava = document.getElementById('meAva');
   ava.style.background = 'linear-gradient(160deg,'+col[0]+','+col[1]+')';
-  ava.textContent = ((meP&&meP.name)||myName||'').replace(/^玩家/,'').slice(0,2) || '我';
+  ava.textContent = (((meP&&meP.name)||myName||'').replace(/^h5/i,'')).slice(0,2) || '我';
   ava.style.boxShadow = myTurn
     ? '0 0 0 3px #f0c85a, 0 0 18px 4px rgba(240,200,90,.6), inset 0 0 0 2px rgba(255,255,255,.3)'
     : 'inset 0 0 0 2px rgba(255,255,255,.28), 0 5px 14px rgba(0,0,0,.45)';
@@ -2055,9 +2081,9 @@ function showExport(rep){
   document.getElementById('expSub').textContent = myTxt + (my ? ' · 可复制或存成 txt' : '');
   const rows = rep.rows || [];
   document.getElementById('expRows').innerHTML = rows.length ? rows.map(r=>
-    '<div class="exp-row'+(r.score>0?' up':(r.score<0?' down':''))+(r.isMe?' me':'')+'">'+
+    '<div class="exp-row'+(r.score>0?' up':(r.score<0?' down':''))+(r.isMe?' me':'')+(r.left?' left':'')+'">'+
       '<span class="rk">'+r.rank+'</span>'+
-      '<span class="nm">'+esc(r.name)+(r.isBot?'<i class="tag">机器人</i>':'')+(r.isHost?'<i class="tag">房主</i>':'')+(r.isMe?'<i class="tag me">我</i>':'')+'</span>'+
+      '<span class="nm">'+esc(r.name)+(r.isBot?'<i class="tag">机器人</i>':'')+(r.isHost?'<i class="tag">房主</i>':'')+(r.isMe?'<i class="tag me">我</i>':'')+(r.left?'<i class="tag off">离开</i>':'')+'</span>'+
       '<span class="sc">'+(r.score>=0?'+':'')+r.score+'</span>'+
     '</div>').join('') : '<div class="exp-empty">本房还没有积分记录</div>';
   toggle('exportBox', true);
