@@ -161,8 +161,8 @@
   /* 座位 */
   .seat{position:absolute;width:98px;display:flex;flex-direction:column;align-items:center;gap:3px;
     transition:opacity .2s}
-  .seat.left{left:2px;top:26%}
-  .seat.right{right:2px;top:26%}
+  .seat.left{left:10px;top:26%}
+  .seat.right{right:10px;top:26%}
   .seat.top{left:50%;transform:translateX(-50%);top:0}
   .ava{position:relative;width:52px;height:52px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;
@@ -179,6 +179,9 @@
     background:linear-gradient(180deg,#ffe08a,#f0c85a);padding:2px 9px;border-radius:999px;
     box-shadow:0 2px 8px rgba(240,200,90,.5);letter-spacing:.5px;animation:tfPulse 1s ease-in-out infinite}
   @keyframes tfPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+  /* 左右边缘座位出牌高亮时，把描边/光晕收进屏内，避免溢出被裁 */
+  .seat.left.turn, .seat.right.turn{outline-offset:0}
+  .seat.left.turn .ava, .seat.right.turn .ava{box-shadow:0 0 0 3px #f0c85a,0 0 14px 3px rgba(240,200,90,.5),inset 0 0 0 2px rgba(255,255,255,.35)}
   .seat .off .ava,.seat.offline .ava{filter:grayscale(.85) brightness(.7)}
   .rdy{position:absolute;right:-3px;bottom:-2px;width:17px;height:17px;border-radius:50%;
     background:#38d47f;border:2px solid #0a2b20;display:flex;align-items:center;justify-content:center;
@@ -256,20 +259,11 @@
   @keyframes bubpopme{from{opacity:0;transform:translateY(8px) scale(.88)}
     to{opacity:1;transform:translateY(0) scale(1)}}
 
-  /* 快捷语音 侧边栏 */
+  /* 快捷语音入口已合并到右下角语音按钮（#btnSound），不再用右侧常驻竖排标签 */
   .sndbtn{flex:0 0 auto;width:30px;height:30px;border-radius:50%;cursor:pointer;
     font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;
     background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;padding:0}
   .sndbtn.off{opacity:.55}
-  /* 靠下一些：垂直居中会压住右侧座位的「电脑 / 叫过牌 / 本局主」标签 */
-  .taunt-tab{position:fixed;right:0;top:64%;z-index:60;
-    writing-mode:vertical-rl;cursor:pointer;user-select:none;-webkit-user-select:none;
-    background:linear-gradient(180deg,#e9c46a,#b98a24);color:#3a2a08;
-    font-size:12px;font-weight:800;letter-spacing:.16em;padding:14px 6px 12px;border-radius:10px 0 0 10px;
-    box-shadow:0 4px 14px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.25);border-right:none}
-  .taunt-tab .tdot{display:block;width:6px;height:6px;border-radius:50%;background:#3a2a08;margin-bottom:8px}
-  /* 开局选择 / 叫牌时，底部浮条会顶到这个位置，把标签挪到桌面上方的空白区，避免抢按键点击 */
-  #app.optbar-on .taunt-tab{top:30%}
   .taunt-panel{position:fixed;right:0;top:0;height:var(--vh100,100%);width:220px;max-width:74vw;z-index:61;
     background:rgba(16,22,36,.95);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
     border-left:1px solid rgba(255,255,255,.14);
@@ -279,18 +273,15 @@
     box-sizing:border-box}
   .taunt-panel.open{transform:translateX(0)}
   .tp-head{display:flex;align-items:center;margin-bottom:8px}
-  .tp-title{font-size:14px;font-weight:800;color:#ffe9a8}
+  .tp-title{font-size:14px;font-weight:800;color:#ffe9a8;margin-right:auto}
   /* 关闭键：贴在面板左缘、垂直居中——避开 iOS 状态栏/刘海，任何屏高都点得到 */
-  .tp-close{position:absolute;left:-34px;top:50%;transform:translateY(-50%);
-    width:34px;height:52px;border-radius:12px 0 0 12px;box-sizing:border-box;
+  /* 面板内关闭键（不再伸出屏幕遮挡中央） */
+  .tp-x{margin-left:auto;width:28px;height:28px;border-radius:8px;box-sizing:border-box;
     display:flex;align-items:center;justify-content:center;
-    background:rgba(16,22,36,.95);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
-    border:1px solid rgba(255,255,255,.18);border-right:none;
-    color:#ffe9a8;font-size:19px;font-weight:700;line-height:1;cursor:pointer;
-    box-shadow:-4px 0 14px rgba(0,0,0,.42);
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);
+    color:#ffe9a8;font-size:17px;font-weight:700;line-height:1;cursor:pointer;padding:0;
     user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-  .tp-close:active{background:rgba(240,200,90,.3)}
-  .tp-close .txt{writing-mode:vertical-rl;font-size:11px;letter-spacing:.1em;margin-top:3px}
+  .tp-x:active{background:rgba(240,200,90,.3)}
   .tp-list{display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;padding:2px}
   .taunt-item{text-align:left;cursor:pointer;font-size:13px;font-weight:700;color:#f6ecd2;font-family:inherit;
     background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);
@@ -662,6 +653,7 @@
           <div class="sb" id="meSub">-</div>
         </div>
         <div class="right">
+          <button class="sndbtn" id="btnSound" title="语音播报 / 快捷语音">🔊</button>
           <span class="pill owner" id="meOwner" style="display:none">你是本局主</span>
           <span class="pill" id="meTurn" style="display:none">轮到你</span>
         </div>
@@ -712,16 +704,12 @@
     </div>
   </section>
 
-  <!-- 快捷语音 侧边栏 -->
-  <div class="taunt-tab" id="tauntTab" style="display:none"><span class="tdot"></span>快捷语音</div>
+  <!-- 快捷语音面板：入口已合并到右下角语音按钮（#btnSound） -->
   <div class="taunt-panel" id="tauntPanel">
-    <div class="tp-head"><span class="tp-title">快捷语音</span></div>
-    <div class="tp-list" id="tpList"></div>
-    <div class="tp-foot">
-      <button class="sndbtn" id="btnSound" title="语音播报开关">🔊</button>
-      <span class="lab">语音播报</span>
+    <div class="tp-head"><span class="tp-title">快捷语音</span>
+      <button class="tp-x" id="tauntClose" title="关闭">×</button>
     </div>
-    <div class="tp-close" id="tauntClose" title="关闭快捷语音">×</div>
+    <div class="tp-list" id="tpList"></div>
   </div>
 
   <!-- ==================== 结算 ==================== -->
@@ -941,7 +929,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-04.17';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-04.18';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
@@ -1446,8 +1434,7 @@ function clearSpeechQueue(){
 function initTauntPanel(){
   const list = document.getElementById('tpList');
   const panel = document.getElementById('tauntPanel');
-  const tab = document.getElementById('tauntTab');
-  if(!list || !panel || !tab) return;
+  if(!list || !panel) return;
   list.innerHTML = TAUNTS.map(t=>'<button class="taunt-item" data-t="'+esc(t)+'">'+esc(t)+'</button>').join('');
   list.querySelectorAll('.taunt-item').forEach(b=>{
     b.onclick = ()=>{
@@ -1458,7 +1445,6 @@ function initTauntPanel(){
       setTimeout(()=>panel.classList.remove('cd'), TAUNT_CD);
     };
   });
-  tab.onclick = ()=> panel.classList.toggle('open');
   const close = document.getElementById('tauntClose');
   if(close) close.onclick = ()=> panel.classList.remove('open');
 }
@@ -1975,9 +1961,7 @@ function phaseName(p){
 function showRoom(show){
   document.getElementById('lobby').classList.toggle('hidden', show);
   document.getElementById('room').classList.toggle('hidden', !show);
-  // 快捷语音只在房间里才有意义（首页点了也发不出去）
-  const tab = document.getElementById('tauntTab');
-  if(tab) tab.style.display = show ? '' : 'none';
+  // 快捷语音入口在底部语音按钮，进房即用；离房时收起面板
   if(!show) document.getElementById('tauntPanel').classList.remove('open');
 }
 
@@ -2251,8 +2235,10 @@ document.getElementById('btnSound').onclick = ()=>{
   soundOn = !soundOn;
   try { localStorage.setItem('pk_sound', soundOn ? '1' : '0'); } catch(e){}
   updateSoundBtn();
-  if(!soundOn){ clearSpeechQueue(); return; }   // 关掉就立刻静音，别把队列念完
-  speak('语音已开启');
+  if(!soundOn){ clearSpeechQueue(); }   // 关掉就立刻静音，别把队列念完
+  else speak('语音已开启');
+  // 合并「快捷语音入口」与「关闭」：点一下同时开/合面板
+  document.getElementById('tauntPanel').classList.toggle('open');
 };
 // 先取 ws.json（可选），再连接；没有 ws.json 也不影响（走同域名）
 loadWsConfig().finally(()=>{
