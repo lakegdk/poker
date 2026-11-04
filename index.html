@@ -549,7 +549,7 @@
     <div class="lobby-inner">
       <div class="topline">
         <span class="chip"><i class="dot" id="connDot"></i><span id="conn">连接中…</span></span>
-        <span class="chip">ID <b id="myid">-</b></span>
+        <span class="chip">我的固定ID <b id="myid">-</b></span>
       </div>
 
       <div class="logo">
@@ -853,18 +853,19 @@ function backHtml(w){
 
 // ===================== 连接 =====================
 // 给每部手机一个「短身份证」：h5 前缀 + 4 位无歧义字符（去掉易混的 I O 0 1）。
-// 短了才好念、好记、好区分；存进 sessionStorage 后固定不变，同一浏览器多标签各自独立。
+// 关键：用 localStorage 持久化 —— 手机关掉再打开、甚至几天后身份都不丢，
+//   id 固定了，服务端按 id 记的积分才能在任何时候查到「我」，不会再出现查不到。
+// 想在一台电脑模拟多人联机测试时，用 ?cid=h5XXXX 临时指定身份（不污染本机固定 id）。
 function genId(){
   const POOL = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = '';
   for (let i = 0; i < 4; i++) s += POOL[Math.floor(Math.random() * POOL.length)];
   return 'h5' + s;   // 例如 h5K7Q2（共 6 位）
 }
-// 用 sessionStorage：同一浏览器多开标签页时每个标签是独立玩家，才能一台电脑模拟 3~4 人。
-// 支持 ?cid=xxx 固定身份；受限 iframe 里 storage 会抛异常，降级到内存。
+// 用 localStorage：跨标签页、跨重启都还在，给手机一个稳定身份；受限环境 storage 抛异常时降级到内存。
 const store = (() => {
   try {
-    const s = window.sessionStorage;
+    const s = window.localStorage;
     s.setItem('__pk_t','1'); s.removeItem('__pk_t');
     return s;
   } catch(e){
@@ -873,9 +874,11 @@ const store = (() => {
   }
 })();
 const urlCid = (()=>{ try{ return new URLSearchParams(location.search).get('cid'); }catch(e){ return null; } })();
+const urlName = (()=>{ try{ return new URLSearchParams(location.search).get('name'); }catch(e){ return null; } })();
+// 优先用 URL 指定的临时身份（多开测试）；否则用本机持久的固定 id；都没有才新生成并固化。
 let clientId = urlCid || store.getItem('pk_cid') || genId();
-store.setItem('pk_cid', clientId);
-let myName = store.getItem('pk_name') || clientId;   // 默认直接用短编号当昵称，不同手机一眼区分；可在「昵称」框改成真名
+if (!urlCid) store.setItem('pk_cid', clientId);   // 仅真实身份持久化，测试 cid 不写回本机
+let myName = urlName || store.getItem('pk_name') || clientId;   // 默认直接用短编号当昵称，不同手机一眼区分；可在「昵称」框改成真名
 document.getElementById('name').value = myName;
 let roomId = store.getItem('pk_room') || null;
 let ws = null, lastState = null, selected = new Set(), callGiveId = null, cdTimer = null;
@@ -929,7 +932,7 @@ function nameNow(){ const v=document.getElementById('name').value.trim(); myName
 // 页面放在固定域名（GitHub Pages）后，桌面图标永远指向同一个地址：以后改代码只要重新发布，
 // 图标照旧能用，点开就读到新版。但 GitHub Pages 的 HTML 有约 10 分钟 CDN 缓存，
 // iOS 主屏 WebView 也可能拿旧缓存，所以这里对比 version.json，把「有新版本」显式提示出来。
-const BUILD = '2026-11-04.18';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
+const BUILD = '2026-11-04.19';   // 每次发布改这个值；tools/build-static.js 会据此生成 version.json
 let updChecked = 0;
 async function checkUpdate(force){
   const now = Date.now();
